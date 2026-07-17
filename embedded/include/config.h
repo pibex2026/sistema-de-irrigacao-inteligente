@@ -18,4 +18,16 @@ namespace Config {
         
         #define DHT_SENSOR_TYPE DHT22 
     }
+
+    namespace Network {
+        constexpr const char* DEFAULT_AP_NAME = "ESP Irrigacao";
+        constexpr const char* DEFAULT_AP_PASSWORD = "";
+    }
+
+    namespace DataLog {
+        constexpr const char* LittleFS_MOUNT_POINT = "/littlefs";
+        constexpr const char* SENSORS_READINGS_LOG = "/readings.csv";
+        constexpr const char* INFERENCE_LOG = "/inference.csv";
+    }
+
 }
