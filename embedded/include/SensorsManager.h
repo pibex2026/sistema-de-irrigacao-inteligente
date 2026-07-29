@@ -15,6 +15,7 @@ public:
   SensorsManager();
   void begin();
   SensorData readSensors();
+  SensorData getMockedValues();
 
 private:
   DHT m_dht;
