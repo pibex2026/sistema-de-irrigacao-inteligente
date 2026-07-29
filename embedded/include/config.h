@@ -4,8 +4,14 @@
 
 namespace Config {
 
+    namespace Hardware {
+        
+        constexpr uint8_t SENSOR_TYPE_DH22 = 22;
+        constexpr uint8_t SENSOR_TYPE_DH11 = 11; 
+    }
+
     namespace Pins {
-        constexpr uint8_t DHT_SENSOR_PIN = 4; 
+        constexpr uint8_t DHT_SENSOR_PIN = 5; 
 
         constexpr uint8_t SOIL_MOISTURE_ADC = 32; 
         constexpr uint8_t RELAY_VALVE = 25; 
@@ -14,14 +20,12 @@ namespace Config {
         constexpr uint8_t STATUS_LED  = 2;  
     }
 
-    namespace Hardware {
-        
-        #define DHT_SENSOR_TYPE DHT22 
-    }
 
     namespace Network {
         constexpr const char* DEFAULT_AP_NAME = "ESP Irrigacao";
         constexpr const char* DEFAULT_AP_PASSWORD = "";
+        const IPAddress DEFAULT_GATEWAY(192, 168, 1, 1);
+        const IPAddress DEFAULT_SUBNET(255, 255, 255, 0);
     }
 
     namespace DataLog {
