@@ -31,11 +31,13 @@ Caracteristicas:
 * Umidade do solo: HW-080
 
 
+## Checklists com [tasks](docs/TODO.md)
+
 ## Datasets
 
-Os datasets consultados podem ser conferidos [aqui](docs/DATASETS.MD)
+Os datasets consultados podem ser conferidos [aqui](docs/DATASETS.md)
 
 
 ## Artigos
 
-Os datasets consultados podem ser conferidos [aqui](docs/ARCTICLES.MD)
+Os datasets consultados podem ser conferidos [aqui](docs/ARCTICLES.md)

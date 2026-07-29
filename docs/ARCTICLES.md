@@ -4,7 +4,7 @@
 
 Acurácia alta porém com um alto custo de implementação
 
-------------------------------------------
+---
 
 ### [Soil Moisture Prediction Using Machine Learning Techniques](https://dl.acm.org/doi/10.1145/3440840.3440854) 
 
@@ -16,13 +16,13 @@ Acurácia alta mas limitado a tipos específicos de solo
 
 ### [Machine Learning Approaches for Crop Water Requirement Prediction and Optimization](https://www.researchgate.net/publication/399128391_Machine_Learning_Approaches_for_Crop_Water_Requirement_Prediction_and_Optimization) 
 
-----------------------------------------------------
+---
 
 ### [IoT and Edge Computing for Real-time Monitoring](https://www.researchgate.net/publication/356482133_An_IoT-Based_Real-Time_Intelligent_Irrigation_System_using_Machine_Learning) 
 
 Acurácia alta mas com escalabilidade limitada
 
-------------
+---
 
 ### [Smart Irrigation System with Predictive Analytics using Machine Learning and IoT](https://www.americaspg.com/articleinfo/18/show/1629) 
 
@@ -30,7 +30,7 @@ Acurácia alta mas com escalabilidade limitada
 
 Alta acurácia mas há uma preocupação com a privacidade dos dados
 
-----
+---
 
 ### [ Fuzzy Logic Controllers in Smart Irrigation.](https://www.mdpi.com/2673-4591/58/1/93) 
 
@@ -39,7 +39,7 @@ Alta acurácia mas há uma preocupação com a privacidade dos dados
 
 Alta acurácia mas há Complexidade no ajuste fino das regras fuzzy (tuning fuzzy rules).
 
-----------q
+---
 
 ### [Blockchain-IoT integrated for Secure Irrigation Systems](https://ieeexplore.ieee.org/document/9622256)
 
