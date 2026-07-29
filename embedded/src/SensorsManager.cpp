@@ -9,7 +9,9 @@ the sensors and update the system state accordingly.
 #include <DHT.h>
 
 SensorsManager::SensorsManager()
-    : m_dht(Config::Pins::DHT_SENSOR_PIN, DHT_SENSOR_TYPE) {}
+    : m_dht(Config::Pins::DHT_SENSOR_PIN,
+    Config::Hardware::SENSOR_TYPE_DH22
+    ) {}
 
 void SensorsManager::begin() {
   m_dht.begin();
@@ -23,6 +25,15 @@ SensorsManager::SensorData SensorsManager::readSensors() {
   data.soilMoisture = getSoilMoisture();
   data.timestamp = getFormattedTimestamp();
   return data;
+}
+
+SensorsManager::SensorData SensorsManager::getMockedValues() {
+return SensorData {
+        .temperature = 20,           
+        .humidity = 60,                 
+        .soilMoisture = 40,             
+        .timestamp = getFormattedTimestamp()
+    };
 }
 
 int8_t SensorsManager::getTemperature() {
