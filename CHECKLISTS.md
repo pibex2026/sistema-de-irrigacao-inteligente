@@ -12,7 +12,7 @@ O objetivo principal deste projeto é criar um ecossistema de irrigação inteli
 
 ## Checklist de Execução do Projeto
 
-Acompanhe abaixo as etapas de desenvolvimento e o status de cada entrega do projeto:
+Acompanhe abaixo as etapas de desenvolvimento e o status de cada entrega do projeto, também é possível acompanhar uma lista detalhada das tarefas realizadas e planejadas no [link](docs/TODO.md):
 
 ### Fase 1: Diagnóstico e Pesquisa
 - [ ] **Pesquisa do Estado da Arte:** Investigar as atuais tecnologias de irrigação inteligente que aplicam IA, IoT e microcontroladores.
