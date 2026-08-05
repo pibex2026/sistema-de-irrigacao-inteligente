@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Validação LittleFS - Vue + Router</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f4f4f9;
+    }
+    .card {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      min-width: 280px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 1.5rem;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ponto de montagem da aplicação Vue -->
+  <div id="app">
+    <div class="card">
+      <router-view></router-view>
+    </div>
+  </div>
+
+  <!-- tenta carregar do LittleFS (local), se falhar, baixa do CDN em ordem correta -->
+  <script>
+    function carregarScript(srcLocal, srcCDN) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = srcLocal;
+        script.onload = resolve;
+        script.onerror = () => {
+          // Se falhar o local, carrega o do CDN
+          const scriptCDN = document.createElement('script');
+          scriptCDN.src = srcCDN;
+          scriptCDN.onload = resolve;
+          scriptCDN.onerror = reject;
+          document.head.appendChild(scriptCDN);
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    // Inicializa a aplicação somente após confirmar o carregamento das bibliotecas
+    async function iniciarApp() {
+      try {
+        // 1. Carrega o Vue
+        await carregarScript('/vue.global.prod.js', 'https://unpkg.com/vue@3/dist/vue.global.js');
+        // 2. Carrega o Vue Router em seguida
+        await carregarScript('/vue-router.global.prod.js', 'https://unpkg.com/vue-router@4/dist/vue-router.global.js');
+
+        // 3. Define os Componentes das Telas
+        const Home = {
+          template: `
+            <div>
+              <h1>HelloWorld</h1>
+              <button @click="$router.push('/pagina2')">Ir para a Segunda Página</button>
+            </div>
+          `
+        };
+
+        const Pagina2 = {
+          template: `
+            <div>
+              <h1>Button Works</h1>
+              <button @click="$router.push('/')">Ir para a Primeira Página</button>
+            </div>
+          `
+        };
+
+        // 4. Configura as Rotas e o Vue Router
+        const routes = [
+          { path: '/', component: Home },
+          { path: '/pagina2', component: Pagina2 }
+        ];
+
+        const router = VueRouter.createRouter({
+          history: VueRouter.createWebHashHistory(),
+          routes
+        });
+
+        // 5. Monta o App
+        const app = Vue.createApp({});
+        app.use(router);
+        app.mount('#app');
+
+      } catch (err) {
+        console.error("Erro ao carregar as dependências do Vue:", err);
+      }
+    }
+
+    iniciarApp();
+  </script>
+
+</body>
+</html>
