@@ -24,8 +24,9 @@ namespace Config {
     namespace Network {
         constexpr const char* DEFAULT_AP_NAME = "ESP Irrigacao";
         constexpr const char* DEFAULT_AP_PASSWORD = "";
-        const IPAddress DEFAULT_GATEWAY(192, 168, 1, 1);
-        const IPAddress DEFAULT_SUBNET(255, 255, 255, 0);
+        constexpr uint8_t DEFAULT_GATEWAY[4]= {192, 168, 1, 1};
+        constexpr uint8_t DEFAULT_SUBNET[4]= {255, 255, 255, 0};
+        constexpr uint8_t DEFAULT_STATIC_IP[4] = {192, 168, 0, 100};
     }
 
     namespace DataLog {
