@@ -1,200 +1,163 @@
 #include "NetworkManager.h"
 
-NetworkManager::NetworkManager() {
-  m_autoReconnect;
-  m_hostname;
-  m_useStaticIP;
-  m_staticIP;
-  m_staticGateway;
-  m_staticSubnet;
-  m_primaryDNS;
-  m_secondaryDNS;
-  m_useCustomDNS;
-  m_mdnsStarted;
-  m_defaultApName;
-  m_defaultApPassword;
-  m_portalTimeout;
-  m_inPortal;
-  m_lastReconnectAttempt;
-  m_ipStr;
-  m_ssidStr;
+
+
+static const char* TAG = "Network Manager";
+Preferences prefs;
+
+NetworkManager::NetworkManager(uint16_t webServerPort)  
+    : _server(webServerPort), _useStaticIP(false) {
 }
 
-void NetworkManager::begin() {
-  WiFi.mode(WIFI_STA);
+bool NetworkManager::begin(NetworkMode mode, const char* apName, const char* ssid, const char* pass) {
+    bool connected = false;
 
-  if (m_hostname.length() > 0) {
-    WiFi.setHostname(m_hostname.c_str());
-  }
-
-  // Apply network settings (static IP / custom DNS)
-  if (m_useStaticIP) {
-    WiFi.config(m_staticIP, m_staticGateway, m_staticSubnet, m_primaryDNS,
-                m_secondaryDNS);
-  } else if (m_useCustomDNS) {
-    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, m_primaryDNS,
-                m_secondaryDNS);
-  } else {
-    // DHCP with default DNS
-    WiFi.config(0U, 0U, 0U);
-  }
-
-  m_wifiManager.setConfigPortalTimeout(m_portalTimeout);
-  // Start non-blocking auto-connect (portal will be active if needed)
-  m_wifiManager.autoConnect(m_defaultApName.c_str(),
-                            m_defaultApPassword.c_str());
-}
-
-void NetworkManager::loop() {
-  m_wifiManager.process(); // handle DNS/config portal requests
-  m_inPortal = m_wifiManager.getConfigPortalActive();
-
-  // Auto-reconnect logic when not in portal
-  if (!m_inPortal && !isConnected() && m_autoReconnect) {
-    unsigned long now = millis();
-    if (now - m_lastReconnectAttempt > 30000) { // 30 second interval
-      reconnect();
-      m_lastReconnectAttempt = now;
+    // Se o usuário configurou um IP estático, aplicamos as configurações
+    if (_useStaticIP) {
+        // Aplica para o WiFi nativo (usado no FIXED e AP)
+        WiFi.config(_localIP, _gateway, _subnet);
+        // Aplica para o WiFiManager
+        _wm.setSTAStaticIPConfig(_localIP, _gateway, _subnet);
+        ESP_LOGI(TAG, "Succesfully conected with static IP");
     }
-  }
 
-  updateNetworkInfo();
+
+    switch (mode) {
+        case NetworkMode::MODE_WIFI_MANAGER:
+            
+            connected = _wm.autoConnect(apName);
+            break;
+
+        case NetworkMode::MODE_FIXED_CREDENTIALS:
+            connected = connectFixedCredentials(ssid, pass);
+            break;
+
+        case NetworkMode::MODE_AP_ONLY:
+            connected = startAPOnly(apName);
+            break;
+    }
+
+    // Se a conexão foi bem sucedida (ou o AP subiu) e temos um nome mDNS, iniciamos ele
+    if (connected && _mdnsName.length() > 0) {
+        if (MDNS.begin(_mdnsName.c_str())) {
+            Serial.printf("mDNS iniciado. Acesse: http://%s.local\n", _mdnsName.c_str());
+        }
+    }
+
+    // Inicia o servidor Web
+    _server.begin();
+
+    return connected;
 }
 
-bool NetworkManager::isConnected() const {
-  return WiFi.status() == WL_CONNECTED;
+void NetworkManager::resetCredentials() {
+    _wm.resetSettings();
+    prefs.clear();
+    ESP_LOGW(TAG, "Reset wifi credencials");
 }
 
-const char *NetworkManager::getSSID() const { return m_ssidStr; }
-
-const char *NetworkManager::getIP() const { return m_ipStr; }
-
-void NetworkManager::setHostname(const char *hostname) {
-  m_hostname = hostname;
-  if (WiFi.isConnected()) {
-    // Hostname takes effect only on next connection
-  }
+IPAddress getDefaultGateway() {
+    return IPAddress(Config::Network::DEFAULT_GATEWAY);
 }
 
-void NetworkManager::disconnect() { WiFi.disconnect(false, true); }
-
-bool NetworkManager::reconnect() {
-  if (isConnected()) {
-    return true; // already connected
-  }
-
-  WiFi.disconnect(true);
-
-  // Apply current IP/DNS settings before connecting
-  if (m_useStaticIP) {
-    WiFi.config(m_staticIP, m_staticGateway, m_staticSubnet, m_primaryDNS,
-                m_secondaryDNS);
-  } else if (m_useCustomDNS) {
-    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, m_primaryDNS,
-                m_secondaryDNS);
-  } else {
-    WiFi.config(0U, 0U, 0U);
-  }
-
-  WiFi.begin(); // use last saved credentials
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-    delay(100);
-  }
-  return isConnected();
+IPAddress getDefaultSubnet() {
+    return IPAddress(Config::Network::DEFAULT_SUBNET);
 }
 
-void NetworkManager::setAutoReconnect(bool autoReconnect) {
-  m_autoReconnect = autoReconnect;
+void NetworkManager::setStaticIP(IPAddress ip) {
+    _localIP = ip;
+    
+    _gateway = getDefaultGateway(); 
+    _subnet = getDefaultSubnet();   
+    _useStaticIP = true;
 }
 
-void NetworkManager::setStaticIP(const IPAddress &ip, const IPAddress &gateway,
-                                 const IPAddress &subnet) {
-  m_useStaticIP = true;
-  m_staticIP = ip;
-  m_staticGateway = gateway;
-  m_staticSubnet = subnet;
-  // Keep existing DNS or defaults
+
+void NetworkManager::setStaticIP(IPAddress ip, IPAddress gateway, IPAddress subnet) {
+    _localIP = ip;
+    _gateway = gateway;
+    _subnet = subnet;
+    _useStaticIP = true;
 }
 
-void NetworkManager::setDHCP() {
-  m_useStaticIP = false;
-  // If custom DNS is set, it will be handled separately
-}
-
-void NetworkManager::setDNS(const IPAddress &primaryDNS,
-                            const IPAddress &secondaryDNS) {
-  m_useCustomDNS = true;
-  m_primaryDNS = primaryDNS;
-  m_secondaryDNS =
-      (secondaryDNS == INADDR_NONE) ? IPAddress(0, 0, 0, 0) : secondaryDNS;
-}
-
-IPAddress NetworkManager::getLocalIP() const { return WiFi.localIP(); }
-
-IPAddress NetworkManager::getGatewayIP() const { return WiFi.gatewayIP(); }
-
-IPAddress NetworkManager::getSubnetMask() const { return WiFi.subnetMask(); }
-
-IPAddress NetworkManager::getPrimaryDNS() const { return WiFi.dnsIP(0); }
-
-IPAddress NetworkManager::getSecondaryDNS() const { return WiFi.dnsIP(1); }
-
-String NetworkManager::getMACAddress() const { return WiFi.macAddress(); }
-
-int8_t NetworkManager::getRSSI() const { return WiFi.RSSI(); }
-
-bool NetworkManager::startMDNS(const char *hostname) {
-  if (m_mdnsStarted)
-    stopMDNS();
-  if (MDNS.begin(hostname)) {
-    m_mdnsStarted = true;
+bool NetworkManager::setMDNSName(const char* name) {
+    _mdnsName = String(name);
     return true;
-  }
-  return false;
 }
 
-void NetworkManager::stopMDNS() {
-  if (m_mdnsStarted) {
-    MDNS.end();
-    m_mdnsStarted = false;
-  }
+IPAddress NetworkManager::getIP() {
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        return WiFi.softAPIP();
+    }
+    return WiFi.localIP();
 }
 
-void NetworkManager::setAPName(const char *apName) { m_defaultApName = apName; }
-
-void NetworkManager::setAPPassword(const char *apPassword) {
-  m_defaultApPassword = apPassword;
+String NetworkManager::getIPString() {
+    return getIP().toString();
 }
 
-void NetworkManager::setConfigPortalTimeout(unsigned long seconds) {
-  m_portalTimeout = seconds;
+WebServer& NetworkManager::getServer() {
+    return _server;
 }
 
-void NetworkManager::resetSettings() {
-  m_wifiManager.resetSettings();
-  delay(100);
-  ESP.restart();
+void NetworkManager::handle() {
+    _server.handleClient();
 }
 
-bool NetworkManager::isInConfigPortal() const { return m_inPortal; }
+// --- MÉTODOS PRIVADOS AUXILIARES ---
 
-String NetworkManager::getConnectionStatus() const {
-  if (isConnected()) {
-    return "Connected";
-  } else if (m_inPortal) {
-    return "Configuring";
-  }
-  return "Disconnected";
+bool NetworkManager::connectFixedCredentials(const char* ssid, const char* pass) {
+    if (!ssid || !pass) return false;
+    
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, pass);
+    
+    Serial.print("Conectando ao WiFi");
+    uint8_t retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 20) {
+        delay(500);
+        Serial.print(".");
+        retries++;
+    }
+    Serial.println();
+    
+    return WiFi.status() == WL_CONNECTED;
 }
 
-// Private helper: refresh cached text representations
-void NetworkManager::updateNetworkInfo() {
-  if (isConnected()) {
-    WiFi.localIP().toString().toCharArray(m_ipStr, sizeof(m_ipStr));
-    WiFi.SSID().toCharArray(m_ssidStr, sizeof(m_ssidStr));
-  } else {
-    m_ipStr[0] = '\0';
-    m_ssidStr[0] = '\0';
-  }
+bool NetworkManager::startAPOnly(const char* apName) {
+    WiFi.mode(WIFI_AP);
+    return WiFi.softAP(apName); // Sem senha, rede aberta. Pode alterar adicionando senha.
 }
+
+
+void saveStaticIP(IPAddress ip, IPAddress gateway, IPAddress subnet) {
+    prefs.begin("network", false);
+
+    prefs.putBool("useStatic", true);
+
+    prefs.putUInt("ip", (uint32_t)ip);
+    prefs.putUInt("gateway", (uint32_t)gateway);
+    prefs.putUInt("subnet", (uint32_t)subnet);
+
+    prefs.end();
+}
+
+// --- FUNÇÃO PARA CARREGAR NO BOOT ---
+bool loadStaticIP(IPAddress &ip, IPAddress &gateway, IPAddress &subnet) {
+    // Abre a partição "network" no modo Somente Leitura (true)
+    prefs.begin("network", true);
+
+    // Lê se o IP estático está habilitado (retorna 'false' se a chave não existir)
+    bool useStatic = prefs.getBool("useStatic", false);
+
+    if (useStatic) {
+        // Lê os inteiros salvos da Flash e reconverte para IPAddress
+        ip = IPAddress(prefs.getUInt("ip", 0));
+        gateway = IPAddress(prefs.getUInt("gateway", 0));
+        subnet = IPAddress(prefs.getUInt("subnet", 0));
+    }
+
+    prefs.end();
+    return useStatic; // Retorna true se tinha configuração estática salva
+}
+
