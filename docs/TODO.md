@@ -8,10 +8,10 @@
   - [x] Implementar estrutura usando C++ moderno (`namespace Config`)
   - [x] Definir pinagem dos sensores usando `constexpr uint8_t` (Mapear analógicos no ADC1: GPIO 32/33)
   - [x] Definir intervalos de amostragem e constantes de tempo
-- [x] Criar biblioteca utilitária independente de frameworks (`utils.h` / `utils.cpp`)
+  - [x] Criar biblioteca utilitária independente de frameworks (`utils.h` / `utils.cpp`)
   - [x] Implementar função `getFormattedTimestamp()` usando `<time.h>` padrão e `localtime_r` (thread-safe)
   - [x] Adicionar validação de sincronização NTP (retornar `nullptr` se o ano for anterior a 2020)
-- [] Implementar Máquina de Estados (State Machine) no loop principal (`main.cpp`)
+  - [] Implementar Máquina de Estados (State Machine) no loop principal (`main.cpp`)
   - [] Criar `enum class SystemState { INIT, READ_SENSORS, RUN_INFERENCE, EXECUTE_ACTION, ERROR }`
 
 ## 2. Módulo de Sensores (`SensorsManager`)
@@ -20,8 +20,8 @@
 - [x] Definir struct pública `SensorData` (Temperatura, Umidade do Ar, Umidade do Solo)
 - [x] Implementar inicialização física no método `begin()`
 - [x] Otimizar armazenamento e precisão das variáveis:
-  - [x] **Umidade do Ar:** converter `float` para `uint8_t` (0 a 100%) com arredondamento seguro
-  - [x] **Temperatura:** converter para ponto fixo `int16_t` (multiplicado por 10) para preservar 1 casa decimal sem usar `float` (ou `int8_t` sem decimais)
+- [x] **Umidade do Ar:** converter `float` para `uint8_t` (0 a 100%) com arredondamento seguro
+- [x] **Temperatura:** converter para ponto fixo `int16_t` (multiplicado por 10) para preservar 1 casa decimal sem usar `float` (ou `int8_t` sem decimais)
 - [x] Implementar tratamento de erros usando valores sentinela (ex: `-999` ou `255`) e validação com `isnan`
 - [] Integrar leitura física do sensor de umidade do solo (ADC1) com mapeamento percentual (`map()`)
 
@@ -44,8 +44,8 @@
 ## 5. Inteligência & Atuação (`ModelManager` & `ActuatorManager`)
 
 - [] Criar classe `ModelManager` para gerenciar a Rede Neural
-  - [] Implementar normalização dos inputs dos sensores antes de alimentar o modelo (ex: `umidade / 100.0f`)
-  - [] Executar a inferência e obter o limiar de decisão
+- [] Implementar normalização dos inputs dos sensores antes de alimentar o modelo (ex: `umidade / 100.0f`)
+- [] Executar a inferência e obter o limiar de decisão
 - [] Criar classe `ActuatorManager` para isolar o controle dos pinos de saída (Relé/Válvula de irrigação)
 - [] Vincular a decisão da Rede Neural à ativação física da irrigação
 
@@ -68,12 +68,12 @@
   # Modelo de IA
 
 * [] **1. Preparação de Dados (Dataset)**
-  - [] Pesquisa, seleção e download de datasets relevantes de clima e solo
-  - [] Pré-processamento e limpeza de dados (tratamento de valores nulos e outliers)
+  - [x] Pesquisa, seleção e download de datasets relevantes de clima e solo
+  - [x] Pré-processamento e limpeza de dados (tratamento de valores nulos e outliers)
   - [] Normalização dos inputs (Temperatura, Umidade do Ar, Umidade do Solo)
   - [] Separação do dataset em conjuntos de Treino, Validação e Teste
 * [] **2. Desenvolvimento e Treinamento**
-  - [] Definição da arquitetura da Rede Neural (ex: MLP)
+  - [x] Definição da arquitetura da Rede Neural (ex: MLP)
   - [] Configuração do pipeline de treinamento (função de perda, otimizador, épocas)
   - [] Execução do treinamento do modelo
 * [] **3. Otimização e Validação**
@@ -89,25 +89,25 @@
 
   ## Geral
 
-- [] Documentar API e regras de negócio
+- [x] Documentar API e regras de negócio
 - [] Definir estrutura de _payload_ (JSON)
-- [] Configurar containerização da aplicação e do banco de dados (Docker)
+- [x] Configurar containerização da aplicação e do banco de dados (Docker)
 
   ## Frontend
 
-- [] Criação de página de login
-- [] Criação de página de cadastro de usuário
-- [] Criação de página de troca de senha
-- [] Criação de dashboard para monitoramento de métricas em tempo real e histórico
-- [] Modularização de componentes e serviços (HTTP)
+- [x] Criação de página de login
+- [x] Criação de página de cadastro de usuário
+- [x] Criação de página de troca de senha
+- [x] Criação de dashboard para monitoramento de métricas em tempo real e histórico
+- [x] Modularização de componentes e serviços (HTTP)
 - [] Implementação de _guards_ de rota para proteção de telas autenticadas
 - [] Configuração de _interceptors_ para injeção automática do token JWT nas requisições
 
   ## Backend (Node.js)
 
-- [] Modelagem do banco de dados relacional e criação de tabelas
-- [] Criar entidades básicas, DTOs e repositórios
-- [] Criar rotas e controllers REST
-- [] Implementar middleware para rotas autenticadas e filtros de segurança
-- [] Implementar login com JWT
-- [] Criar conexão com banco de dados
+- [x] Modelagem do banco de dados relacional e criação de tabelas
+- [x] Criar entidades básicas, DTOs e repositórios
+- [x] Criar rotas e controllers REST
+- [x] Implementar middleware para rotas autenticadas e filtros de segurança
+- [x] Implementar login com JWT
+- [x] Criar conexão com banco de dados
