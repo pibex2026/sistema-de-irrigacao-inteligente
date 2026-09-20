@@ -9,7 +9,8 @@ the sensors and update the system state accordingly.
 #include <DHT.h>
 
 SensorsManager::SensorsManager()
-    : m_dht(Config::Pins::DHT_SENSOR_PIN,
+    : m_dht(
+    Config::Pins::DHT_SENSOR_PIN,
     Config::Hardware::SENSOR_TYPE_DH22
     ) {}
 

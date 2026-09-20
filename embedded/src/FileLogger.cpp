@@ -68,17 +68,15 @@ SensorsManager::SensorData parseCSVLine(const std::string &line) {
   std::stringstream ss(line);
   std::string item;
 
-  // Formato esperado na escrita: temperature, humidity, soilMoisture, timestamp
 
-  // 1. Temperatura (float)
   if (std::getline(ss, item, ',')) {
     data.temperature = std::stoi(item);
   }
-  // 2. Umidade (float)
+
   if (std::getline(ss, item, ',')) {
     data.humidity = std::stoi(item);
   }
-  // 3. Umidade do Solo (int)
+
   if (std::getline(ss, item, ',')) {
     data.soilMoisture = std::stoi(item);
   }
@@ -95,7 +93,7 @@ std::vector<SensorsManager::SensorData> FileLogger::readAllSensorsLog() {
   std::ifstream file(getSensorsLogDirectory());
 
   if (!file.is_open())
-    return readings; // vetor vazio
+    return readings; 
 
   std::string line;
   while (std::getline(file, line)) {
