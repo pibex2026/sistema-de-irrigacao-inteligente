@@ -1,7 +1,8 @@
+#pragma once
+
 #include "config.h"
 #include <DHT.h>
-
-#pragma once
+#include <cstdint>
 
 class SensorsManager {
 
@@ -10,7 +11,7 @@ public:
     int8_t temperature;
     uint8_t humidity;
     uint8_t soilMoisture;
-    const char *timestamp;
+    char timestamp[20];
   };
   SensorsManager();
   void begin();

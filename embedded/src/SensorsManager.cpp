@@ -1,5 +1,5 @@
 /*
-The purpose os this class is to manage the sensors of the system. It will read
+The purpose of this class is to manage the sensors of the system. It will read
 the sensors and update the system state accordingly.
 */
 
@@ -7,6 +7,7 @@ the sensors and update the system state accordingly.
 #include "Utils.h"
 #include "config.h"
 #include <DHT.h>
+#include <cstring>
 
 SensorsManager::SensorsManager()
     : m_dht(
@@ -24,17 +25,31 @@ SensorsManager::SensorData SensorsManager::readSensors() {
   data.temperature = getTemperature();
   data.humidity = getHumidity();
   data.soilMoisture = getSoilMoisture();
-  data.timestamp = getFormattedTimestamp();
+  const char *ts = getFormattedTimestamp();
+  if (ts != nullptr) {
+    strncpy(data.timestamp, ts, sizeof(data.timestamp) - 1);
+    data.timestamp[sizeof(data.timestamp) - 1] = '\0';
+  } else {
+    strncpy(data.timestamp, "0000-00-00 00:00:00", sizeof(data.timestamp) - 1);
+    data.timestamp[sizeof(data.timestamp) - 1] = '\0';
+  }
   return data;
 }
 
 SensorsManager::SensorData SensorsManager::getMockedValues() {
-return SensorData {
-        .temperature = 20,           
-        .humidity = 60,                 
-        .soilMoisture = 40,             
-        .timestamp = getFormattedTimestamp()
-    };
+  SensorData data;
+  data.temperature = 20;
+  data.humidity = 60;
+  data.soilMoisture = 40;
+  const char *ts = getFormattedTimestamp();
+  if (ts != nullptr) {
+    strncpy(data.timestamp, ts, sizeof(data.timestamp) - 1);
+    data.timestamp[sizeof(data.timestamp) - 1] = '\0';
+  } else {
+    strncpy(data.timestamp, "0000-00-00 00:00:00", sizeof(data.timestamp) - 1);
+    data.timestamp[sizeof(data.timestamp) - 1] = '\0';
+  }
+  return data;
 }
 
 int8_t SensorsManager::getTemperature() {
@@ -52,6 +67,8 @@ int8_t SensorsManager::getTemperature() {
 
 uint8_t SensorsManager::getHumidity() {
   float h = m_dht.readHumidity();
+  if (isnan(h))
+    return 255;
   float rounded = round(h);
   if (rounded > 100.0f)
     rounded = 100.0f;
@@ -62,6 +79,11 @@ uint8_t SensorsManager::getHumidity() {
 
 uint8_t SensorsManager::getSoilMoisture() {
   int rawValue = analogRead(Config::Pins::SOIL_MOISTURE_ADC);
-  // Mapeia o valor analógico do ESP32 (0-4095) para porcentagem (0-100)
-  return map(rawValue, 4095, 0, 0, 100);
+  if (rawValue < 0) rawValue = 0;
+  if (rawValue > 4095) rawValue = 4095;
+  // Mapeia o valor analógico do ESP32 (4095=seco, 0=úmido) para porcentagem (0-100)
+  long mapped = map(rawValue, 4095, 0, 0, 100);
+  if (mapped < 0) mapped = 0;
+  if (mapped > 100) mapped = 100;
+  return static_cast<uint8_t>(mapped);
 }

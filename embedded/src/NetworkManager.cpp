@@ -1,24 +1,6 @@
 #include "NetworkManager.h"
 
-NetworkManager::NetworkManager() {
-  m_autoReconnect;
-  m_hostname;
-  m_useStaticIP;
-  m_staticIP;
-  m_staticGateway;
-  m_staticSubnet;
-  m_primaryDNS;
-  m_secondaryDNS;
-  m_useCustomDNS;
-  m_mdnsStarted;
-  m_defaultApName;
-  m_defaultApPassword;
-  m_portalTimeout;
-  m_inPortal;
-  m_lastReconnectAttempt;
-  m_ipStr;
-  m_ssidStr;
-}
+NetworkManager::NetworkManager() {}
 
 void NetworkManager::begin() {
   WiFi.mode(WIFI_STA);
@@ -39,6 +21,7 @@ void NetworkManager::begin() {
     WiFi.config(0U, 0U, 0U);
   }
 
+  m_wifiManager.setConfigPortalBlocking(false);
   m_wifiManager.setConfigPortalTimeout(m_portalTimeout);
   // Start non-blocking auto-connect (portal will be active if needed)
   m_wifiManager.autoConnect(m_defaultApName.c_str(),

@@ -75,7 +75,7 @@ private:
   bool m_inPortal = false;
   bool m_useCustomDNS = false;
   bool m_mdnsStarted = false;
-  uint8_t m_lastReconnectAttempt = 0;
+  unsigned long m_lastReconnectAttempt = 0;
   char m_ipStr[16] = "";
   char m_ssidStr[32] = "";
 };

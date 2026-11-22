@@ -11,6 +11,8 @@ program, before any logging operation.
 #include "SensorsManager.h"
 #include "Utils.h"
 #include "config.h"
+#include <Arduino.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -34,15 +36,6 @@ public:
                          data.humidity, data.soilMoisture, data.timestamp);
     }
 
-    // Se no futuro você tiver dados de inferência:
-    /*
-    else if constexpr (std::is_same_v<T, InferenceManager::InferenceData>) {
-    std::string fullPath = std::string(Config::DataLog::LittleFS_MOUNT_POINT) +
-    getInferenceLogDirectory(); return writeToFile(fullPath.c_str(),
-    data.resultado, data.confianca, data.timestamp);
-    }
-    */
-
     return false; // Retorna false se passar um tipo não suportado
   }
   //-------------- END LOG METHOD --------------
@@ -51,27 +44,39 @@ public:
   std::vector<SensorsManager::SensorData> readRecentSensorsLog(size_t n);
 
 private:
-  /*
-  we need
-  verify if log .csv exists
-  select specific directory for logs
-  save there logs plus timestamp
-  be able to read log
-  to write new log
+  template <typename T>
+  void writeArg(std::ofstream &file, const T &value) {
+    if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t>) {
+      file << static_cast<int>(value);
+    } else {
+      file << value;
+    }
+  }
 
-  */
   template <typename... Args>
-  bool writeToFile(const char *filename, Args... args);
+  bool writeToFile(const char *filename, Args... args) {
+    std::ofstream file(filename, std::ios::app);
+    if (!file.is_open()) {
+      return false;
+    }
+    size_t index = 0;
+    auto writeWithComma = [&](const auto &val) {
+      if (index++ > 0) {
+        file << ",";
+      }
+      writeArg(file, val);
+    };
+    (writeWithComma(args), ...);
+    file << "\n";
+    file.close();
+    return true;
+  }
+
   bool createFile(const char *filename, const char *header = nullptr);
   const char *getSensorsLogDirectory();
   const char *getInferenceLogDirectory();
   bool createReadingsLogFile();
   bool createInferenceLogFile();
-
-  template <typename T>
-  void writeArg(std::ofstream &file, const T &value) {
-    file << value;
-  }
 };
 
 }; // namespace Storage
