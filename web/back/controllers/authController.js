@@ -12,7 +12,11 @@ const authController = {
             const newUser = await authService.registerUser(nome, email, senha);
             return res.status(201).json(newUser);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            if (error.statusCode) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error('Erro no cadastro:', error);
+            return res.status(500).json({ error: 'Erro interno ao processar cadastro.' });
         }
     },
 
@@ -27,7 +31,11 @@ const authController = {
             const result = await authService.loginUser(email, senha);
             return res.status(200).json(result);
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            if (error.statusCode) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error('Erro no login:', error);
+            return res.status(500).json({ error: 'Erro interno ao processar login.' });
         }
     }
 };

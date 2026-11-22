@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: irrigacao_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: irrigacao_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./web/back/schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+  backend:
+    build:
+      context: ./web/back
+      dockerfile: Dockerfile
+    container_name: irrigacao_backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/irrigacao_db
+      JWT_SECRET: pibex_secret_docker_dev_key
+      NODE_ENV: development
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
