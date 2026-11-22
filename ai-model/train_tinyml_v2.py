@@ -49,6 +49,7 @@ import glob
 import json
 import time
 import random
+import argparse
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -579,12 +580,13 @@ def predict_single_tflite(q_meta, vec_27):
     return yq.astype(np.float32)
 
 
-def generate_cpp_header(tflite_blob, q_meta, golden_comments):
+def generate_cpp_header(tflite_blob, q_meta, golden_comments, golden_structs):
     """
     Gera o arquivo `model_data.h` autocontido para o ESP32 com:
       - Constantes de normalização, psicrometria (VPD) e sentinelas de erro
       - Parâmetros de quantização INT8 (`INPUT_SCALE`, `INPUT_ZERO_POINT`, etc.)
       - Enums C++ `SoilType`, `CropType`, `SeedlingStage`
+      - Golden Test Vectors compiláveis (`GOLDEN_VECTORS[]`) para self-test no ESP32
       - Funções C++ inline `isValidSensorReading()`, `computeVpdKpa()` e
         `encodeFeatures27()` prontas para uso direto pelo `ModelManager` no ESP32
       - Array alinhado `alignas(8) const unsigned char g_model_data[]`
@@ -595,6 +597,11 @@ def generate_cpp_header(tflite_blob, q_meta, golden_comments):
     ]
     hex_body = ",\n".join(hex_lines)
     golden_block = "\n".join(golden_comments)
+    golden_items = ",\n".join(
+        f"        {{{g['t']:.1f}f, {g['h']:.1f}f, {g['m']:.1f}f, {g['s_id']}, {g['c_id']}, {g['st_id']}, "
+        f"{g['raw_cls']}, {g['final_cls']}, {{{g['p0']:.4f}f, {g['p1']:.4f}f, {g['p2']:.4f}f}}}}"
+        for g in golden_structs
+    )
 
     return f"""#pragma once
 
@@ -749,6 +756,23 @@ namespace TinyMLConfig {{
     inline float dequantizeOutput(int8_t qValue) {{
         return (static_cast<float>(qValue) - static_cast<float>(OUTPUT_ZERO_POINT)) * OUTPUT_SCALE;
     }}
+
+    struct GoldenVector {{
+        float tempC;
+        float humPct;
+        float soilPct;
+        uint8_t soilId;
+        uint8_t cropId;
+        uint8_t stageId;
+        uint8_t expectedRawClass;
+        uint8_t expectedFinalClass;
+        float expectedProbs[3];
+    }};
+
+    constexpr uint8_t GOLDEN_VECTOR_COUNT = {len(golden_structs)};
+    constexpr GoldenVector GOLDEN_VECTORS[GOLDEN_VECTOR_COUNT] = {{
+{golden_items}
+    }};
 }}
 
 const unsigned int g_model_len = {len(tflite_blob)};
@@ -825,9 +849,58 @@ def save_training_diagnostic_figure(history, mode_metrics, cm_m1, cm_m6, cm_m8, 
 
 
 # ============================================================================
-# 8. PIPELINE PRINCIPAL DE EXECUÇÃO (TRAIN TINYML v2)
+# 8. PIPELINE PRINCIPAL DE EXECUÇÃO (TRAIN TINYML v2 + FINE-TUNING CAMPO)
 # ============================================================================
+def load_field_csv_for_finetuning(readings_path=None, inferences_path=None):
+    """
+    Carrega logs reais coletados pelo ESP32 (/littlefs/readings.csv ou inference.csv)
+    para fine-tuning incremental em Paulista-PE, filtrando sentinelas de falha.
+    """
+    rows = []
+    if inferences_path and os.path.exists(inferences_path):
+        df_inf = pd.read_csv(inferences_path)
+        req_cols = {"temperatura_c", "umidade", "umidade_solo", "decisao"}
+        if req_cols.issubset(df_inf.columns):
+            for _, r in df_inf.iterrows():
+                t = float(r["temperatura_c"])
+                h = float(r["umidade"])
+                m = float(r["umidade_solo"])
+                cls = int(r["decisao"])
+                if not is_valid_sensor_reading(t, h, m) or cls not in (0, 1, 2):
+                    continue
+                s_id = int(r.get("soil_id", 0))
+                c_id = int(r.get("crop_id", 0))
+                st_id = int(r.get("stage_id", 0))
+                rows.append((t, h, m, s_id, c_id, st_id, cls))
+    elif readings_path and os.path.exists(readings_path):
+        df_rd = pd.read_csv(readings_path)
+        req_cols = {"temperatura_c", "umidade", "umidade_solo", "decisao"}
+        if req_cols.issubset(df_rd.columns):
+            for _, r in df_rd.iterrows():
+                t = float(r["temperatura_c"])
+                h = float(r["umidade"])
+                m = float(r["umidade_solo"])
+                cls = int(r["decisao"])
+                if is_valid_sensor_reading(t, h, m) and cls in (0, 1, 2):
+                    rows.append((t, h, m, 0, 0, 0, cls))
+    if not rows:
+        return None, None
+    Xs = np.array([encode_features(t, h, m, s, c, st) for t, h, m, s, c, st, _ in rows], dtype=np.float32)
+    ys = np.array([cls for *_, cls in rows], dtype=np.int32)
+    return Xs, ys
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Treinamento e Exportação TinyML v2 (PhysMLP-27 INT8)")
+    parser.add_argument("--field-readings", type=str, default=None, help="Caminho para readings.csv coletado em campo")
+    parser.add_argument("--field-inferences", type=str, default=None, help="Caminho para inference.csv coletado em campo")
+    parser.add_argument("--epochs-ft", type=int, default=15, help="Épocas de fine-tuning com dados de campo")
+    parser.add_argument("--lr-ft", type=float, default=5e-4, help="Learning rate para fine-tuning")
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     t0 = time.time()
     base_dir = os.path.dirname(os.path.abspath(__file__))
     out_dir = os.path.join(base_dir, "output")
@@ -907,6 +980,30 @@ def main():
         callbacks=callbacks,
         verbose=1,
     )
+
+    # Fine-tuning opcional com dados reais coletados em campo (Paulista-PE)
+    if args.field_inferences or args.field_readings:
+        X_field, y_field = load_field_csv_for_finetuning(args.field_readings, args.field_inferences)
+        if X_field is not None and len(X_field) > 0:
+            print(f"\n  [Fine-Tuning Campo] {len(X_field)} amostras válidas carregadas; ajustando pesos (lr={args.lr_ft})...")
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(learning_rate=args.lr_ft),
+                loss="sparse_categorical_crossentropy",
+                metrics=["accuracy"],
+            )
+            model.fit(
+                X_field, y_field,
+                validation_data=(X_val, y_val),
+                epochs=args.epochs_ft,
+                batch_size=min(32, len(X_field)),
+                class_weight=CALIBRATED_CLASS_WEIGHTS,
+                callbacks=[
+                    tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True, verbose=1)
+                ],
+                verbose=1,
+            )
+        else:
+            print("\n  [Fine-Tuning Campo] Nenhuma amostra válida encontrada nos CSVs informados.")
 
     print(f"\n{sep}\n[4/7] Avaliação Completa nos 8 Modos de Contexto (M1 a M8)\n{sep}")
     mode_metrics = {}
@@ -992,30 +1089,32 @@ def main():
     print("  [Fail-Safe Check] Proteção contra sentinelas (-128, -999, 255, NaN): PASSOU 100%")
 
     # Golden Test Vectors validados no TFLite INT8 Interpreter
+    # Formato: (desc, t, h, m, s_id, c_id, st_id, expected_final_class)
     golden_cases = [
-        ("Caso 1 (Sem Contexto - Solo Umido/Frio -> OFF)", 22.0, 78.0, 65.0, 0, 0, 0),
-        ("Caso 2 (Sem Contexto - Solo Seco/Quente -> IRRIGATE)", 34.0, 45.0, 22.0, 0, 0, 0),
-        ("Caso 3 (Sem Contexto - Calor Extremo + Solo Encharcado -> THERMAL_STRESS)", 38.0, 40.0, 75.0, 0, 0, 0),
+        ("Caso 1 (Sem Contexto - Solo Umido/Frio -> OFF)", 22.0, 78.0, 65.0, 0, 0, 0, 0),
+        ("Caso 2 (Sem Contexto - Solo Seco/Quente -> IRRIGATE)", 34.0, 45.0, 22.0, 0, 0, 0, 1),
+        ("Caso 3 (Sem Contexto - Calor Extremo + Solo Encharcado -> THERMAL_STRESS)", 38.0, 40.0, 75.0, 0, 0, 0, 2),
         (
             "Caso 4 (Com Contexto: Tomate em Solo Argiloso + Floracao - Seco -> IRRIGATE)",
             33.0, 50.0, 28.0,
-            SOIL_TO_ID["Clay Soil"], CROP_TO_ID["Tomato"], STAGE_TO_ID["Flowering"],
+            SOIL_TO_ID["Clay Soil"], CROP_TO_ID["Tomato"], STAGE_TO_ID["Flowering"], 1,
         ),
         (
             "Caso 5 (Com Contexto: Pimenta em Solo Arenoso + Germinacao - Calor + Umido -> THERMAL_STRESS)",
             37.0, 42.0, 70.0,
-            SOIL_TO_ID["Sandy Soil"], CROP_TO_ID["Chilli"], STAGE_TO_ID["Germination"],
+            SOIL_TO_ID["Sandy Soil"], CROP_TO_ID["Chilli"], STAGE_TO_ID["Germination"], 2,
         ),
         (
             "Caso 6 (Modo 6 - Apenas Cultura: Tomate [0,1,0] - Solo Seco -> IRRIGATE)",
             31.0, 52.0, 25.0,
-            0, CROP_TO_ID["Tomato"], 0,
+            0, CROP_TO_ID["Tomato"], 0, 1,
         ),
     ]
 
     print(f"\n{sep}\n[7/7] Extração de Golden Test Vectors (INT8) e Exportação de model_data.h\n{sep}")
     golden_comments = []
-    for desc, t, h, m, s_id, c_id, st_id in golden_cases:
+    golden_structs = []
+    for desc, t, h, m, s_id, c_id, st_id, final_cls in golden_cases:
         vec = encode_features(t, h, m, s_id, c_id, st_id)
         probs = predict_single_tflite(q_meta, vec)
         pred_cls = int(np.argmax(probs))
@@ -1023,12 +1122,18 @@ def main():
         line = (
             f"// {desc}: Temp={t}C, Hum={h}%, Soil={m}%, VPD={vpd_val:.2f}kPa, "
             f"SoilID={s_id}, CropID={c_id}, StageID={st_id} => "
-            f"Class={pred_cls} (P0={probs[0]:.3f}, P1={probs[1]:.3f}, P2={probs[2]:.3f})"
+            f"RawClass={pred_cls}, FinalClass={final_cls} (P0={probs[0]:.3f}, P1={probs[1]:.3f}, P2={probs[2]:.3f})"
         )
         golden_comments.append(line)
+        golden_structs.append({
+            "t": t, "h": h, "m": m,
+            "s_id": s_id, "c_id": c_id, "st_id": st_id,
+            "raw_cls": pred_cls, "final_cls": final_cls,
+            "p0": float(probs[0]), "p1": float(probs[1]), "p2": float(probs[2]),
+        })
         print(" ", line)
 
-    cpp_header = generate_cpp_header(tflite_int8, q_meta, golden_comments)
+    cpp_header = generate_cpp_header(tflite_int8, q_meta, golden_comments, golden_structs)
 
     header_destinations = [
         os.path.join(out_dir, "model_data.h"),
