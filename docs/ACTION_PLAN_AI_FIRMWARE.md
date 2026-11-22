@@ -373,6 +373,12 @@ flowchart LR
      - `POST /api/calibrate/dry` e `POST /api/calibrate/wet` $\rightarrow$ lê mediana atual do ADC1 e persiste em NVS.
      - `GET /logs/readings.csv` e `GET /logs/inference.csv` $\rightarrow$ download por *chunked transfer* (`httpd_resp_send_chunk` em buffers de `1024 B`, sem alocar o arquivo inteiro na RAM).
 
+#### Etapa 4.1B — Páginas Web de Rendimento/Execução e Diagnóstico da Placa `[Implementada]`
+* **Objetivo:** Fornecer observabilidade embarcada completa diretamente no navegador local, sem depender da nuvem.
+* **Ações:**
+  1. **`GET /api/performance` + Aba "Rendimento & Execução":** Exibe contadores de inferências (`total`, `OFF`, `IRRIGATE`, `THERMAL_STRESS`), leituras/erros de sensores, acionamentos da válvula, latência de inferência (`última`, `média`, `mínima`, `máxima` em µs), arena TFLM utilizada, *stack* livre da `control_task` e tabela com as últimas `15` inferências registradas no LittleFS.
+  2. **`GET /api/system` + Aba "Placa & Sistema":** Exibe modelo do chip (`esp_chip_info`), revisão, cores, MAC, versão do ESP-IDF, motivo do último reset, clock CPU/XTAL em MHz (`esp_clk_tree`), temperatura (nota sobre ausência de sensor interno oficial no ESP32 clássico + temperatura ambiente DHT22), uso detalhado de Heap (total, livre, usado, mínimo histórico, maior bloco contíguo) e armazenamento (tamanho da Flash, partição OTA ativa, ocupação do LittleFS e tamanho individual dos CSVs).
+
 #### Etapa 4.2 — Protocolo de Testes e Critérios de Aceitação (*Definition of Done*) `[Pendente]`
 1. **Build Limpo ESP-IDF:** `pio run` e `pio run -t buildfs` concluem sem erros, com Flash `< 75%` de `app0` e SRAM estática `< 55%`.
 2. **Fidelidade Numérica C++ vs Python (*Golden Self-Test*):** Os 6 *Golden Test Vectors* executados no `esp-tflite-micro` INT8 atingem `|P_esp32[c] - P_python[c]| <= 0,01` e `100%` de concordância nas decisões finais (incluindo Caso 3 promovido para `THERMAL_STRESS_WET_SOIL` pelo fallback físico).
@@ -429,5 +435,6 @@ flowchart LR
 
 ### Fase 4 — Web Local, Validação de Bancada, Energia e Docs
 - [x] **Passo 4.1:** Implementar `LocalWebServer` (`esp_http_server` + `espressif/mdns` `irrigacao.local`) servindo `index.html.gz` (`view/index.html` atualizado), API JSON (`/api/status`, `/api/config`, `/api/wifi`, `/api/calibrate/*`) e download CSV por *chunked streaming* (`pio run -t buildfs` validado).
+- [x] **Passo 4.1B:** Adicionar páginas web de **Rendimento & Execução** (`/api/performance`) e **Diagnóstico da Placa & Sistema** (`/api/system`: clock, memória, armazenamento Flash/LittleFS, temperatura, reset/IDF) em `LocalWebServer` e `view/index.html`.
 - [ ] **Passo 4.2:** Executar em bancada física (ESP32 + DHT22 + HW-080 + Relé) os 8 testes de aceitação da Etapa 4.2 (*Golden Self-Test* no serial monitor, *fail-safe* de sensores, *timeout*/*cooldown*, Classe 2, queda Wi-Fi e estresse LittleFS/Heap).
 - [x] **Passo 4.3:** Documentar modo de economia energética para painel solar e sincronizar `docs/TODO.md` e `README.md`.
