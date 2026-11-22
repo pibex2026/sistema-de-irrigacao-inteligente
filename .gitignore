@@ -212,3 +212,6 @@ $RECYCLE.BIN/
 
 # Datasets
 ai-model/datasets/
+
+# ESP-IDF managed components
+embedded/managed_components/
