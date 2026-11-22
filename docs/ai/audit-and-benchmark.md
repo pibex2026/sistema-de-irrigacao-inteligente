@@ -22,7 +22,7 @@ A auditoria linha a linha do notebook original revelou **9 problemas críticos**
 4. **Validação Distorcida (`is_training=True` no `val_df`):**
    - O notebook aplicava `build_augmented_dataset(val_df, is_training=True)`, multiplicando hortaliças por 4x e filtrando a Classe 2 (`m >= 60.0`) no conjunto de validação, distorcendo a `val_loss` monitorada pelo `EarlyStopping` e `ReduceLROnPlateau`.
 
-![Auditoria Forense do Dataset](../ai-model/output/figures/fig01_dataset_forensics_and_leakage.png)
+![Auditoria Forense do Dataset](../../ai-model/output/figures/fig01_dataset_forensics_and_leakage.png)
 
 ### C. Bugs Críticos de Treinamento e Lógica Estatística
 5. **Colapso de Precisão da Classe 2 (`THERMAL_STRESS`) pela Combinação `class_weight="balanced"` + *Context Dropout* Assimétrico:**
@@ -33,7 +33,7 @@ A auditoria linha a linha do notebook original revelou **9 problemas críticos**
 7. **Ausência de Engenharia de Atributos Psicrométricos (*VPD* e Acoplamento Hidro-Térmico):**
    - A evapotranspiração e o estresse térmico são governados pelo **Déficit de Pressão de Vapor ($VPD$, kPa)** e por razões não-lineares entre temperatura, umidade do ar e umidade do solo.
 
-![Distorção de Class Weight e Teto Bayesiano](../ai-model/output/figures/fig02_class_weight_distortion_and_bayes_limit.png)
+![Distorção de Class Weight e Teto Bayesiano](../../ai-model/output/figures/fig02_class_weight_distortion_and_bayes_limit.png)
 
 ### D. Bugs de Quantização TinyML e Integração com o Firmware ESP32
 8. **Falsa Quantização no `TFLiteConverter`:**
@@ -70,16 +70,16 @@ Todas as arquiteturas foram avaliadas sob o mesmo conjunto de teste deduplicado 
 
 ## 3. Painel Visual Completo (12 Pranchas em `matplotlib`)
 
-![Fronteiras de Decisão 2D](../ai-model/output/figures/fig03_decision_boundaries_2d_slices.png)
-![Comparativo Global das 10 Arquiteturas](../ai-model/output/figures/fig04_architecture_benchmark_global.png)
-![Heatmap dos 8 Modos de Contexto](../ai-model/output/figures/fig05_all_8_context_modes_heatmap.png)
-![Dinâmica de Treinamento](../ai-model/output/figures/fig06_training_dynamics_and_convergence.png)
-![Matrizes de Confusão](../ai-model/output/figures/fig07_confusion_matrices_grid.png)
-![Curvas ROC, PR e Calibração](../ai-model/output/figures/fig08_roc_pr_and_calibration_curves.png)
-![Pareto Embarcado ESP32](../ai-model/output/figures/fig09_embedded_pareto_flash_ram_latency.png)
-![Fidelidade da Quantização INT8](../ai-model/output/figures/fig10_quantization_fidelity_and_error_distribution.png)
-![Importância de Features e Ablação Física](../ai-model/output/figures/fig11_feature_importance_and_ablation.png)
-![Simulação 48h ESP32 e Falha DHT22](../ai-model/output/figures/fig12_esp32_stress_simulation_24h.png)
+![Fronteiras de Decisão 2D](../../ai-model/output/figures/fig03_decision_boundaries_2d_slices.png)
+![Comparativo Global das 10 Arquiteturas](../../ai-model/output/figures/fig04_architecture_benchmark_global.png)
+![Heatmap dos 8 Modos de Contexto](../../ai-model/output/figures/fig05_all_8_context_modes_heatmap.png)
+![Dinâmica de Treinamento](../../ai-model/output/figures/fig06_training_dynamics_and_convergence.png)
+![Matrizes de Confusão](../../ai-model/output/figures/fig07_confusion_matrices_grid.png)
+![Curvas ROC, PR e Calibração](../../ai-model/output/figures/fig08_roc_pr_and_calibration_curves.png)
+![Pareto Embarcado ESP32](../../ai-model/output/figures/fig09_embedded_pareto_flash_ram_latency.png)
+![Fidelidade da Quantização INT8](../../ai-model/output/figures/fig10_quantization_fidelity_and_error_distribution.png)
+![Importância de Features e Ablação Física](../../ai-model/output/figures/fig11_feature_importance_and_ablation.png)
+![Simulação 48h ESP32 e Falha DHT22](../../ai-model/output/figures/fig12_esp32_stress_simulation_24h.png)
 
 ---
 
@@ -134,4 +134,4 @@ Com base nos 9 problemas diagnosticados na Seção 1 e no benchmark de arquitetu
   5. `Caso 5 (Com Contexto: Pimenta + Arenoso + Germinação - Calor + Úmido -> THERMAL_STRESS)`: `Temp=37.0°C, Hum=42.0%, Soil=70.0%, VPD=3.64kPa, [2,2,1]` $\Rightarrow$ `Class=2` (`P=[0.004, 0.027, 0.973]`)
   6. `Caso 6 (Modo 6 - Apenas Cultura: Tomate [0,1,0] - Solo Seco -> IRRIGATE)`: `Temp=31.0°C, Hum=52.0%, Soil=25.0%, VPD=2.16kPa, [0,1,0]` $\Rightarrow$ `Class=1` (`P=[0.000, 0.996, 0.000]`)
 
-![Diagnóstico do Treinamento TinyML v2](../ai-model/output/figures/train_tinyml_v2_diagnostics.png)
+![Diagnóstico do Treinamento TinyML v2](../../ai-model/output/figures/train_tinyml_v2_diagnostics.png)

@@ -67,14 +67,18 @@ pio run -t uploadfs # Faz o upload da interface web comprimida (.gz) para a part
 ```bash
 cd ai-model
 pip install -r requirements.txt
-python3 train_tinyml_v2.py
+python3 scripts/train_tinyml_v2.py
 ```
 
 ---
 
 ## 📚 Documentação e Referências
 
-* [Planejamento e Tarefas (TODO)](docs/TODO.md)
-* [Checklists de Execução](CHECKLISTS.md)
-* [Datasets de Referência](docs/DATASETS.md)
-* [Artigos e Literatura Científica](docs/ARTICLES.md)
+* [Índice Geral da Documentação](docs/README.md)
+* [Plano de Ação (IA & Firmware ESP-IDF)](docs/planning/action-plan.md)
+* [Planejamento e Tarefas (TODO)](docs/planning/todo.md)
+* [Checklists de Execução](docs/planning/checklists.md)
+* [Arquitetura do Firmware ESP-IDF](docs/architecture/firmware-espidf.md)
+* [Modelo TinyML & Pipeline](docs/ai/tinyml-pipeline.md)
+* [Datasets de Referência](docs/research/datasets-summary.md)
+* [Artigos e Literatura Científica](docs/research/articles.md)

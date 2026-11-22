@@ -1,6 +1,6 @@
 # Levantamento e Avaliação de Datasets para o Modelo TinyML
 
-> Para a análise estatística completa, matrizes de correlação, provas de hash MD5 e benchmark experimental com rede neural MLP, consulte o relatório detalhado em **[docs/DATASETS_EVALUATION.md](DATASETS_EVALUATION.md)**.
+> Para a análise estatística completa, matrizes de correlação, provas de hash MD5 e benchmark experimental com rede neural MLP, consulte o relatório detalhado em **[datasets-evaluation.md](datasets-evaluation.md)**.
 
 ---
 
