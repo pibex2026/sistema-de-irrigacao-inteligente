@@ -14,10 +14,11 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import csv
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_DIR = os.path.join(BASE_DIR, "output")
 FIG_DIR = os.path.join(OUT_DIR, "figures")
 ARTIFACT_DIR = "/home/victor/.gemini/antigravity-cli/brain/fda70498-9ae2-4dac-ae67-7c66e29023c1"
-DATA_PATH = os.path.join(os.path.dirname(__file__), "datasets", "Smart Agriculture Dataset", "cropdata_updated.csv")
+DATA_PATH = os.path.join(BASE_DIR, "datasets", "Smart Agriculture Dataset", "cropdata_updated.csv")
 
 os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(ARTIFACT_DIR, exist_ok=True)

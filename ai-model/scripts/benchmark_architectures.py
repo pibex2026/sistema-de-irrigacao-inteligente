@@ -20,11 +20,12 @@ random.seed(SEED)
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_DIR = os.path.join(BASE_DIR, "output")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 DATA_PATH = os.path.join(
-    os.path.dirname(__file__),
+    BASE_DIR,
     "datasets",
     "Smart Agriculture Dataset",
     "cropdata_updated.csv",

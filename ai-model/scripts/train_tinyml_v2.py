@@ -246,7 +246,7 @@ def encode_batch(temp, hum, moi, soil_id, crop_id, stage_id):
 # 3. CARREGAMENTO, DEDUPLICAÇÃO, SPLITS E FULL-8 CONTEXT DROPOUT
 # ============================================================================
 def resolve_dataset_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
         os.path.join(base_dir, "datasets", "Smart Agriculture Dataset", "cropdata_updated.csv"),
         "datasets/Smart Agriculture Dataset/cropdata_updated.csv",
@@ -902,7 +902,7 @@ def parse_args():
 def main():
     args = parse_args()
     t0 = time.time()
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = os.path.join(base_dir, "output")
     fig_dir = os.path.join(out_dir, "figures")
     os.makedirs(fig_dir, exist_ok=True)
@@ -1137,7 +1137,6 @@ def main():
 
     header_destinations = [
         os.path.join(out_dir, "model_data.h"),
-        os.path.join(base_dir, "model_data.h"),
     ]
     emb_inc = os.path.abspath(os.path.join(base_dir, "..", "embedded", "include"))
     if os.path.isdir(emb_inc):
