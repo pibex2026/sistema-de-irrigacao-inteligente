@@ -1,12 +1,9 @@
 #pragma once
 
 #include "esp_err.h"
+#include "tensorflow/lite/micro/micro_interpreter.h"
+#include "tensorflow/lite/micro/schema/schema_generated.h"
 #include "types.hpp"
-
-namespace tflite {
-class MicroInterpreter;
-struct Model;
-} // namespace tflite
 
 class ModelManager {
 public:

@@ -7,6 +7,7 @@
 #include "esp_wifi.h"
 #include "mdns.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 

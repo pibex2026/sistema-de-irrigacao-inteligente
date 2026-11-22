@@ -1,8 +1,23 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "core/ConfigManager.cpp"
+        "core/TimeUtils.cpp"
+        "drivers/Dht22Driver.cpp"
+        "drivers/SensorsManager.cpp"
+        "ai/ModelManager.cpp"
+        "control/ActuatorManager.cpp"
+        "storage/FileLogger.cpp"
+        "net/NetworkManager.cpp"
+        "net/LocalWebServer.cpp"
     INCLUDE_DIRS
         "../include"
+        "core"
+        "drivers"
+        "ai"
+        "control"
+        "storage"
+        "net"
         "."
     REQUIRES
         nvs_flash
