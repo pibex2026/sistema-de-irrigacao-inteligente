@@ -412,22 +412,22 @@ flowchart LR
 - [x] **Passo 1.1:** Dataset real (`cropdata_updated.csv`), deduplicação (`128` linhas), normalização `[0, 1]` e engenharia psicrométrica (`PhysMLP-27`, `27` features).
 - [x] **Passo 1.2:** Split estratificado `70/15/15` + `GroupSplit` (0% *leakage*), *Full-8 Mask Context Dropout* e pesos calibrados `{0: 1.0, 1: 1.15, 2: 2.20}`.
 - [x] **Passo 1.3:** Quantização real Full INT8 (`5.480 B`, `98,50%` concordância) e exportação de `embedded/include/model_data.h` (C++17 puro).
-- [ ] **Passo 1.4:** Exportar `GOLDEN_VECTORS` como array `constexpr` em `model_data.h` e consolidar `train_tinyml_v2_colab.ipynb` / `train_tinyml_v2.py` como fontes canônicas.
-- [ ] **Passo 1.5:** Adicionar modo *fine-tuning* (`--field-readings` / `--field-inferences`) em `train_tinyml_v2.py`, consolidar relatório de auditoria e versionar artefatos no Git.
+- [x] **Passo 1.4:** Exportar `GOLDEN_VECTORS` como array `constexpr` em `model_data.h` e manter `train_tinyml_v2.py` sincronizado.
+- [x] **Passo 1.5:** Adicionar modo *fine-tuning* (`--field-readings` / `--field-inferences`) em `train_tinyml_v2.py` (restam apenas limpeza opcional dos arquivos legados e commit no Git).
 
 ### Fase 2 — Fundação ESP-IDF, Config NVS, IA e Atuação (`embedded/`)
-- [ ] **Passo 2.1:** Migrar `embedded/platformio.ini` para `framework = espidf`, criar `CMakeLists.txt`, `src/CMakeLists.txt`, `src/idf_component.yml`, `sdkconfig.defaults` e validar compilação inicial via `pio run`.
-- [ ] **Passo 2.2:** Criar `include/config.hpp`, `include/types.hpp` e implementar `ConfigManager` sobre NVS (`nvs_flash` / `nvs.h`).
-- [ ] **Passo 2.3:** Implementar `ModelManager` sobre `espressif/esp-tflite-micro` (INT8, `PhysMLP-27`, validação de sentinelas, fallback físico Classe 2 e `runGoldenSelfTest()`).
-- [ ] **Passo 2.4:** Implementar `ActuatorManager` (`driver/gpio.h`, `RELAY_ACTIVE_LOW`, *timeout*, *cooldown*, debounce anti-*chattering*, `emergencyStop()` e padrões no `STATUS_LED`).
+- [x] **Passo 2.1:** Migrar `embedded/platformio.ini` para `framework = espidf`, criar `CMakeLists.txt`, `src/CMakeLists.txt`, `src/idf_component.yml`, `sdkconfig.defaults` e validar compilação via `pio run` (`53,0%` Flash, `15,6%` RAM).
+- [x] **Passo 2.2:** Criar `include/config.hpp`, `include/types.hpp` e implementar `ConfigManager` sobre NVS (`nvs_flash` / `nvs.h`).
+- [x] **Passo 2.3:** Implementar `ModelManager` sobre `espressif/esp-tflite-micro` (INT8, `PhysMLP-27`, validação de sentinelas, fallback físico Classe 2 e `runGoldenSelfTest()`).
+- [x] **Passo 2.4:** Implementar `ActuatorManager` (`driver/gpio.h`, `RELAY_ACTIVE_LOW`, *timeout*, *cooldown*, debounce anti-*chattering*, `emergencyStop()` e padrões no `STATUS_LED`).
 
 ### Fase 3 — Drivers Nativos, LittleFS, Rede Assíncrona e FSM (`embedded/`)
-- [ ] **Passo 3.1:** Implementar `Dht22Driver` (GPIO 5) e `SensorsManager` (`int16_t` x10 com sentinela `-999`, `ADC_UNIT_1`/`ADC_CHANNEL_4`/`ADC_ATTEN_DB_12` + calibração eFuse + mediana 10x + detecção de desconexão HW-080).
-- [ ] **Passo 3.2:** Implementar `FileLogger` (`joltwallet/littlefs` VFS `/littlefs`, `readings.csv` + `inference.csv`, mutex, rotação automática e leitura recente sem OOM) e `TimeUtils`.
-- [ ] **Passo 3.3:** Implementar `NetworkManager` (`esp_wifi` STA + SoftAP de provisionamento assíncrono, *backoff* via `esp_timer`, `esp_sntp` `BRT3` e operação 100% offline).
-- [ ] **Passo 3.4:** Implementar `src/main.cpp` (`app_main`, `control_task` no Core 1 com FSM completa `INIT -> READ_SENSORS -> RUN_INFERENCE -> EXECUTE_ACTION / ERROR` e `esp_task_wdt`).
+- [x] **Passo 3.1:** Implementar `Dht22Driver` (GPIO 5) e `SensorsManager` (`int16_t` x10 com sentinela `-999`, `ADC_UNIT_1`/`ADC_CHANNEL_4`/`ADC_ATTEN_DB_12` + calibração eFuse + mediana 10x + detecção de desconexão HW-080).
+- [x] **Passo 3.2:** Implementar `FileLogger` (`joltwallet/littlefs` VFS `/littlefs`, `readings.csv` + `inference.csv`, mutex, rotação automática e leitura recente sem OOM) e `TimeUtils`.
+- [x] **Passo 3.3:** Implementar `NetworkManager` (`esp_wifi` STA + SoftAP de provisionamento assíncrono, *backoff* via `esp_timer`, `esp_sntp` `BRT3` e operação 100% offline).
+- [x] **Passo 3.4:** Implementar `src/main.cpp` (`app_main`, `control_task` no Core 1 com FSM completa `INIT -> READ_SENSORS -> RUN_INFERENCE -> EXECUTE_ACTION / ERROR` e `esp_task_wdt`).
 
 ### Fase 4 — Web Local, Validação de Bancada, Energia e Docs
-- [ ] **Passo 4.1:** Implementar `LocalWebServer` (`esp_http_server` + `espressif/mdns` `irrigacao.local`) servindo `index.html.gz`, API JSON (`/api/status`, `/api/config`, `/api/wifi`, `/api/calibrate/*`) e download CSV por *chunked streaming*.
-- [ ] **Passo 4.2:** Executar todos os 8 testes de aceitação da Etapa 4.2 (`pio run`, *Golden Self-Test*, *fail-safe* de sensores, *timeout*/*cooldown*, Classe 2, queda Wi-Fi e estresse LittleFS/Heap).
-- [ ] **Passo 4.3:** Documentar/ativar modo de economia energética para painel solar (`WIFI_PS_MIN_MODEM` / plano *Deep Sleep*) e sincronizar `docs/TODO.md` e `README.md`.
+- [x] **Passo 4.1:** Implementar `LocalWebServer` (`esp_http_server` + `espressif/mdns` `irrigacao.local`) servindo `index.html.gz` (`view/index.html` atualizado), API JSON (`/api/status`, `/api/config`, `/api/wifi`, `/api/calibrate/*`) e download CSV por *chunked streaming* (`pio run -t buildfs` validado).
+- [ ] **Passo 4.2:** Executar em bancada física (ESP32 + DHT22 + HW-080 + Relé) os 8 testes de aceitação da Etapa 4.2 (*Golden Self-Test* no serial monitor, *fail-safe* de sensores, *timeout*/*cooldown*, Classe 2, queda Wi-Fi e estresse LittleFS/Heap).
+- [x] **Passo 4.3:** Documentar modo de economia energética para painel solar e sincronizar `docs/TODO.md` e `README.md`.

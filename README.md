@@ -19,8 +19,8 @@ O objetivo deste projeto é desenvolver um ecossistema integrado de monitorament
 ## 🛠️ Arquitetura do Repositório
 
 ```text
-├── embedded/          # Firmware ESP32 (PlatformIO, LittleFS, Drivers e Web Server Local)
-├── ai-model/          # Pipeline de IA (dataset sintético, treino MLP e conversão TinyML)
+├── embedded/          # Firmware ESP32 (PlatformIO + ESP-IDF v5.5, FreeRTOS, LittleFS e esp_http_server)
+├── ai-model/          # Pipeline de IA (Smart Agriculture Dataset, PhysMLP-27, quantização INT8 e TinyML)
 ├── web/
 │   ├── back/          # API REST Node.js / Express com autenticação JWT e PostgreSQL
 │   └── front/         # Interface Web de telemetria e controle do produtor
@@ -56,18 +56,18 @@ docker compose up -d
 ```
 A API estará acessível em `http://localhost:8080/api`.
 
-### 2. Firmware Embarcado (ESP32 via PlatformIO)
+### 2. Firmware Embarcado (ESP32 via PlatformIO + ESP-IDF)
 ```bash
 cd embedded
 pio run -t upload
-pio run -t uploadfs # Faz o upload da interface web para a partição LittleFS
+pio run -t uploadfs # Faz o upload da interface web comprimida (.gz) para a partição LittleFS
 ```
 
 ### 3. Pipeline do Modelo TinyML (Python)
 ```bash
 cd ai-model
 pip install -r requirements.txt
-python train_tinyml.py
+python3 train_tinyml_v2.py
 ```
 
 ---
