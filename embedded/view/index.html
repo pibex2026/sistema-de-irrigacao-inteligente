@@ -39,6 +39,13 @@
     .bar { height:10px; background:#0f172a; border-radius:99px; overflow:hidden; margin-top:6px; }
     .bar > div { height:100%; background:var(--pri); transition:width .3s; }
     .table-wrap { overflow-x:auto; }
+    .wifi-list { display:grid; gap:6px; margin:10px 0; max-height:220px; overflow-y:auto; }
+    .wifi-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 11px; border-radius:8px; background:#0f172a; border:1px solid #334155; cursor:pointer; transition:border-color .15s, background .15s; }
+    .wifi-item:hover { border-color:var(--pri); }
+    .wifi-item.selected { border-color:var(--pri); background:#0c233a; }
+    .wifi-meta { font-size:.76rem; color:var(--muted); display:flex; gap:8px; align-items:center; }
+    .wifi-log { margin-top:10px; padding:10px 12px; border-radius:8px; background:#0b1220; border:1px solid #334155; font-family:ui-monospace, SFMono-Regular, monospace; font-size:.78rem; color:#cbd5e1; max-height:140px; overflow-y:auto; white-space:pre-wrap; }
+    .wifi-log a { color:var(--pri); }
   </style>
 </head>
 <body>
@@ -129,15 +136,21 @@
 
       <div class="card">
         <h2>Provisionamento Wi-Fi &amp; Logs CSV (LittleFS)</h2>
+        <div class="actions" style="margin-top:0; margin-bottom:10px;">
+          <button id="btnScanWifi" class="sec" onclick="scanWifi()">Buscar Redes Wi-Fi</button>
+          <span class="sub" id="wifiScanStatus" style="align-self:center;">Clique para listar redes 2.4 GHz ao alcance do ESP32.</span>
+        </div>
+        <div id="wifiList" class="wifi-list"></div>
         <div class="row">
-          <div><label>SSID da Rede Wi-Fi</label><input id="wifiSsid" type="text" placeholder="Nome do Wi-Fi"></div>
-          <div><label>Senha Wi-Fi</label><input id="wifiPass" type="password" placeholder="Senha"></div>
+          <div><label>SSID da Rede Wi-Fi</label><input id="wifiSsid" type="text" placeholder="Selecione acima ou digite o SSID"></div>
+          <div><label>Senha Wi-Fi</label><input id="wifiPass" type="password" placeholder="Senha (vazia se aberta)"></div>
         </div>
         <div class="actions">
-          <button class="btn-pri" onclick="saveWifi()">Conectar Wi-Fi</button>
+          <button id="btnConnWifi" class="btn-pri" onclick="saveWifi()">Testar &amp; Conectar Wi-Fi</button>
           <a class="btn" href="/logs/readings.csv">Baixar readings.csv</a>
           <a class="btn" href="/logs/inference.csv">Baixar inference.csv</a>
         </div>
+        <div id="wifiLog" class="wifi-log">Pronto para buscar e testar conexao Wi-Fi.</div>
       </div>
     </div>
 
@@ -357,12 +370,148 @@
       alert('Calibracao salva: ' + JSON.stringify(res));
     }
 
+    let wifiTestTimer = null;
+
+    function logWifi(msg, isHtml = false) {
+      const box = document.getElementById('wifiLog');
+      const ts = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      if (isHtml) line.innerHTML = `[${ts}] ${msg}`;
+      else line.textContent = `[${ts}] ${msg}`;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function rssiBadge(rssi) {
+      if (rssi >= -60) return `<span class="badge b-ok">${rssi} dBm</span>`;
+      if (rssi >= -75) return `<span class="badge b-warn">${rssi} dBm</span>`;
+      return `<span class="badge b-err">${rssi} dBm</span>`;
+    }
+
+    function selectWifi(ssid, isOpen, el) {
+      document.querySelectorAll('.wifi-item').forEach(x => x.classList.remove('selected'));
+      if (el) el.classList.add('selected');
+      document.getElementById('wifiSsid').value = ssid;
+      const passEl = document.getElementById('wifiPass');
+      if (isOpen) {
+        passEl.value = '';
+        logWifi(`Rede aberta selecionada: "${ssid}". Clique em "Testar & Conectar Wi-Fi".`);
+      } else {
+        passEl.focus();
+        logWifi(`Rede selecionada: "${ssid}". Informe a senha e clique em "Testar & Conectar Wi-Fi".`);
+      }
+    }
+
+    async function scanWifi() {
+      const btn = document.getElementById('btnScanWifi');
+      const status = document.getElementById('wifiScanStatus');
+      const list = document.getElementById('wifiList');
+      btn.disabled = true;
+      btn.textContent = 'Buscando...';
+      status.textContent = 'Varrendo redes 2.4 GHz...';
+      logWifi('Iniciando varredura Wi-Fi no ESP32...');
+      try {
+        const r = await fetch('/api/wifi/scan');
+        const d = await r.json();
+        list.innerHTML = '';
+        if (!d.networks || d.networks.length === 0) {
+          status.textContent = 'Nenhuma rede 2.4 GHz encontrada.';
+          logWifi('Nenhuma rede encontrada.');
+          return;
+        }
+        status.textContent = `${d.networks.length} rede(s) encontrada(s). Clique em uma para selecionar.`;
+        logWifi(`Encontradas ${d.networks.length} rede(s): ${d.networks.map(n => `${n.ssid} (${n.rssi} dBm)`).join(', ')}`);
+        d.networks.forEach(n => {
+          const item = document.createElement('div');
+          item.className = 'wifi-item';
+          item.onclick = () => selectWifi(n.ssid, n.open, item);
+          const name = document.createElement('strong');
+          name.textContent = n.ssid;
+          const meta = document.createElement('div');
+          meta.className = 'wifi-meta';
+          meta.innerHTML = `<span>CH ${n.channel}</span><span>${n.auth}</span>${rssiBadge(n.rssi)}`;
+          item.appendChild(name);
+          item.appendChild(meta);
+          list.appendChild(item);
+        });
+      } catch (e) {
+        status.textContent = 'Erro ao buscar redes.';
+        logWifi('Erro ao consultar /api/wifi/scan.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Buscar Redes Wi-Fi';
+      }
+    }
+
     async function saveWifi() {
       const ssid = document.getElementById('wifiSsid').value.trim();
       const password = document.getElementById('wifiPass').value;
-      if (!ssid) return alert('Informe o SSID');
-      await fetch('/api/wifi', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ssid, password}) });
-      alert('Credenciais enviadas; tentando conectar...');
+      if (!ssid) return logWifi('Informe ou selecione um SSID antes de conectar.');
+
+      const btn = document.getElementById('btnConnWifi');
+      btn.disabled = true;
+      btn.textContent = 'Testando...';
+      if (wifiTestTimer) clearInterval(wifiTestTimer);
+      logWifi(`Enviando credenciais e testando conexao com "${ssid}"...`);
+
+      try {
+        const r = await fetch('/api/wifi', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ssid, password})
+        });
+        const res = await r.json();
+        if (!res.ok) {
+          logWifi('ESP32 recusou as credenciais enviadas.');
+          btn.disabled = false;
+          btn.textContent = 'Testar & Conectar Wi-Fi';
+          return;
+        }
+      } catch (e) {
+        logWifi('Falha ao enviar credenciais para /api/wifi.');
+        btn.disabled = false;
+        btn.textContent = 'Testar & Conectar Wi-Fi';
+        return;
+      }
+
+      let checks = 0;
+      wifiTestTimer = setInterval(async () => {
+        checks++;
+        try {
+          const r = await fetch('/api/status');
+          const d = await r.json();
+          const net = d.network || {};
+          if (net.staConnected && net.ip) {
+            clearInterval(wifiTestTimer);
+            wifiTestTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Testar & Conectar Wi-Fi';
+            logWifi(`CONECTADO com sucesso em "${net.ssid}"! IP: <a href="http://${net.ip}/">http://${net.ip}/</a> (RSSI ${net.rssi} dBm). SoftAP encerra em 15s.`, true);
+            refreshStatus();
+          } else if (!net.staConnecting && net.lastError) {
+            clearInterval(wifiTestTimer);
+            wifiTestTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Testar & Conectar Wi-Fi';
+            logWifi(`FALHA ao conectar em "${ssid}": ${net.lastError}`);
+          } else if (checks >= 14) {
+            clearInterval(wifiTestTimer);
+            wifiTestTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Testar & Conectar Wi-Fi';
+            logWifi(`Tempo esgotado aguardando resposta de "${ssid}". Verifique senha/sinal.`);
+          } else {
+            logWifi(`Aguardando autenticacao/DHCP em "${ssid}" (${checks}/14)...`);
+          }
+        } catch (e) {
+          if (checks >= 14) {
+            clearInterval(wifiTestTimer);
+            wifiTestTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Testar & Conectar Wi-Fi';
+          }
+        }
+      }, 1500);
     }
 
     loadConfig();

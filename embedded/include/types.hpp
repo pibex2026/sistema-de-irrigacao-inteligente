@@ -83,13 +83,23 @@ struct ActuatorStatus {
   uint8_t consecutiveIrrigateCount = 0;
 };
 
+struct WifiScanEntry {
+  char ssid[33] = "";
+  int8_t rssi = -100;
+  uint8_t authmode = 0;
+  uint8_t channel = 0;
+};
+
 struct NetworkStatus {
   bool staConnected = false;
+  bool staConnecting = false;
   bool apActive = false;
   bool ntpSynced = false;
   int8_t rssi = 0;
+  uint8_t lastDisconnectReason = 0;
   char ssid[33] = "";
   char ip[16] = "";
+  char lastError[64] = "";
 };
 
 struct PerformanceStats {

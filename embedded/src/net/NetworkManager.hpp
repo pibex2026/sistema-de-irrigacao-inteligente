@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "types.hpp"
+#include <vector>
 
 class NetworkManager {
 public:
@@ -15,6 +16,7 @@ public:
 
   esp_err_t init();
   esp_err_t setStaCredentials(const char *ssid, const char *password);
+  std::vector<WifiScanEntry> scanNetworks(size_t maxResults = 15);
   void triggerReconnect();
   NetworkStatus getStatus() const;
 

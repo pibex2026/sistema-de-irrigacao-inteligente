@@ -32,6 +32,7 @@ private:
   static esp_err_t handleGetSystemInfo(httpd_req_t *req);
   static esp_err_t handleGetConfig(httpd_req_t *req);
   static esp_err_t handlePostConfig(httpd_req_t *req);
+  static esp_err_t handleGetWifiScan(httpd_req_t *req);
   static esp_err_t handlePostWifi(httpd_req_t *req);
   static esp_err_t handleCalibrateDry(httpd_req_t *req);
   static esp_err_t handleCalibrateWet(httpd_req_t *req);

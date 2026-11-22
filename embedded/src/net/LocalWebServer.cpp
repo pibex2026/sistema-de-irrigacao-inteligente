@@ -10,6 +10,7 @@
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_wifi_types.h"
 #include <cstdio>
 #include <cstring>
 
@@ -76,6 +77,7 @@ esp_err_t LocalWebServer::start() {
       {"/api/system", HTTP_GET, handleGetSystemInfo, this},
       {"/api/config", HTTP_GET, handleGetConfig, this},
       {"/api/config", HTTP_POST, handlePostConfig, this},
+      {"/api/wifi/scan", HTTP_GET, handleGetWifiScan, this},
       {"/api/wifi", HTTP_POST, handlePostWifi, this},
       {"/api/calibrate/dry", HTTP_POST, handleCalibrateDry, this},
       {"/api/calibrate/wet", HTTP_POST, handleCalibrateWet, this},
@@ -103,6 +105,7 @@ void LocalWebServer::stop() {
 }
 
 esp_err_t LocalWebServer::handleRoot(httpd_req_t *req) {
+  ESP_LOGI(TAG, "HTTP GET %s (handleRoot)", req->uri);
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
   FILE *f = nullptr;
   if (self->m_logger.isMounted()) {
@@ -113,20 +116,25 @@ esp_err_t LocalWebServer::handleRoot(httpd_req_t *req) {
       httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
       char buf[1024];
       size_t n = 0;
+      size_t totalSent = 0;
       while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
         if (httpd_resp_send_chunk(req, buf, static_cast<ssize_t>(n)) != ESP_OK) {
+          ESP_LOGW(TAG, "Erro ao enviar chunk de index.html.gz (enviados %zu B)", totalSent);
           std::fclose(f);
           xSemaphoreGive(self->m_logger.getMutex());
           httpd_resp_send_chunk(req, nullptr, 0);
           return ESP_FAIL;
         }
+        totalSent += n;
       }
       std::fclose(f);
       xSemaphoreGive(self->m_logger.getMutex());
       httpd_resp_send_chunk(req, nullptr, 0);
+      ESP_LOGI(TAG, "index.html.gz enviado (%zu bytes).", totalSent);
       return ESP_OK;
     }
     xSemaphoreGive(self->m_logger.getMutex());
+    ESP_LOGW(TAG, "index.html.gz nao encontrado em %s; usando fallback.", Config::Storage::WEB_INDEX_GZ_PATH);
   }
 
   httpd_resp_set_type(req, "text/html");
@@ -170,6 +178,7 @@ esp_err_t LocalWebServer::handleCaptiveRedirect(httpd_req_t *req) {
 }
 
 esp_err_t LocalWebServer::handle404CaptiveRedirect(httpd_req_t *req, httpd_err_code_t) {
+  ESP_LOGI(TAG, "HTTP 404 URI: %s", req->uri);
   if (std::strncmp(req->uri, "/api/", 5) == 0 || std::strncmp(req->uri, "/logs/", 6) == 0) {
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not Found");
     return ESP_FAIL;
@@ -215,11 +224,13 @@ esp_err_t LocalWebServer::handleGetStatus(httpd_req_t *req) {
 
   cJSON *netObj = cJSON_AddObjectToObject(root, "network");
   cJSON_AddBoolToObject(netObj, "staConnected", net.staConnected);
+  cJSON_AddBoolToObject(netObj, "staConnecting", net.staConnecting);
   cJSON_AddBoolToObject(netObj, "apActive", net.apActive);
   cJSON_AddBoolToObject(netObj, "ntpSynced", net.ntpSynced);
   cJSON_AddNumberToObject(netObj, "rssi", net.rssi);
   cJSON_AddStringToObject(netObj, "ssid", net.ssid);
   cJSON_AddStringToObject(netObj, "ip", net.ip);
+  cJSON_AddStringToObject(netObj, "lastError", net.lastError);
 
   char *jsonStr = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
@@ -428,6 +439,47 @@ esp_err_t LocalWebServer::handlePostConfig(httpd_req_t *req) {
 
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_sendstr(req, "{\"ok\":true}");
+}
+
+static const char *authModeToStr(uint8_t authmode) {
+  switch (static_cast<wifi_auth_mode_t>(authmode)) {
+  case WIFI_AUTH_OPEN: return "Aberta";
+  case WIFI_AUTH_WEP: return "WEP";
+  case WIFI_AUTH_WPA_PSK: return "WPA";
+  case WIFI_AUTH_WPA2_PSK: return "WPA2";
+  case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+  case WIFI_AUTH_WPA3_PSK: return "WPA3";
+  case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+  case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-Ent";
+  default: return "Protegida";
+  }
+}
+
+esp_err_t LocalWebServer::handleGetWifiScan(httpd_req_t *req) {
+  auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  const auto nets = self->m_netMgr.scanNetworks(15);
+
+  cJSON *root = cJSON_CreateObject();
+  cJSON_AddBoolToObject(root, "ok", true);
+  cJSON_AddNumberToObject(root, "count", static_cast<double>(nets.size()));
+  cJSON *arr = cJSON_AddArrayToObject(root, "networks");
+  for (const auto &n : nets) {
+    cJSON *item = cJSON_CreateObject();
+    cJSON_AddStringToObject(item, "ssid", n.ssid);
+    cJSON_AddNumberToObject(item, "rssi", n.rssi);
+    cJSON_AddNumberToObject(item, "channel", n.channel);
+    cJSON_AddStringToObject(item, "auth", authModeToStr(n.authmode));
+    cJSON_AddBoolToObject(item, "open", n.authmode == WIFI_AUTH_OPEN);
+    cJSON_AddItemToArray(arr, item);
+  }
+
+  char *jsonStr = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  const esp_err_t res = httpd_resp_sendstr(req, jsonStr ? jsonStr : "{\"ok\":false,\"networks\":[]}");
+  std::free(jsonStr);
+  return res;
 }
 
 esp_err_t LocalWebServer::handlePostWifi(httpd_req_t *req) {

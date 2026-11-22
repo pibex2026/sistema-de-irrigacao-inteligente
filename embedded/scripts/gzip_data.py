@@ -57,3 +57,4 @@ def prepare_and_compress_data_files(source, target, env):
 # Hooks do PlatformIO para LittleFS
 env.AddPreAction("$BUILD_DIR/littlefs.bin", prepare_and_compress_data_files)
 env.AddPreAction("buildfs", prepare_and_compress_data_files)
+env.AddPreAction("uploadfs", prepare_and_compress_data_files)

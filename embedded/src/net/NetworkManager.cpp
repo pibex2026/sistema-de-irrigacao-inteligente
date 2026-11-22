@@ -14,6 +14,29 @@
 
 static const char *TAG = "NetworkManager";
 
+static const char *wifiDisconnectReasonToStr(uint8_t reason) {
+  switch (reason) {
+  case WIFI_REASON_NO_AP_FOUND:
+  case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+  case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
+  case WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD:
+    return "Rede nao encontrada (SSID fora de alcance)";
+  case WIFI_REASON_AUTH_FAIL:
+  case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+  case WIFI_REASON_HANDSHAKE_TIMEOUT:
+  case WIFI_REASON_MIC_FAILURE:
+  case WIFI_REASON_AKMP_INVALID:
+    return "Senha incorreta ou falha de autenticacao";
+  case WIFI_REASON_ASSOC_FAIL:
+  case WIFI_REASON_ASSOC_EXPIRE:
+    return "Falha de associacao com o roteador";
+  case WIFI_REASON_BEACON_TIMEOUT:
+    return "Perda de sinal (beacon timeout)";
+  default:
+    return "Falha na conexao Wi-Fi";
+  }
+}
+
 NetworkManager::NetworkManager() {
   m_mutex = xSemaphoreCreateMutex();
 }
@@ -171,10 +194,113 @@ esp_err_t NetworkManager::setStaCredentials(const char *ssid, const char *passwo
   }
 
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &staCfg));
+  esp_timer_stop(m_reconnectTimer);
   m_retryCount = 0;
   m_backoffMs = 10000;
+
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
+  m_status.staConnected = false;
+  m_status.staConnecting = true;
+  m_status.lastDisconnectReason = 0;
+  m_status.lastError[0] = '\0';
+  m_status.ip[0] = '\0';
+  std::strncpy(m_status.ssid, ssid, sizeof(m_status.ssid) - 1);
+  m_status.ssid[sizeof(m_status.ssid) - 1] = '\0';
+  xSemaphoreGive(m_mutex);
+
   esp_wifi_disconnect();
-  return esp_wifi_connect();
+  const esp_err_t err = esp_wifi_connect();
+  if (err != ESP_OK) {
+    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    m_status.staConnecting = false;
+    std::snprintf(m_status.lastError, sizeof(m_status.lastError), "Erro ao iniciar conexao (%s)",
+                  esp_err_to_name(err));
+    xSemaphoreGive(m_mutex);
+  }
+  return err;
+}
+
+std::vector<WifiScanEntry> NetworkManager::scanNetworks(size_t maxResults) {
+  std::vector<WifiScanEntry> results;
+  if (!m_wifiStarted) return results;
+
+  wifi_mode_t curMode = WIFI_MODE_NULL;
+  if (esp_wifi_get_mode(&curMode) != ESP_OK) return results;
+
+  if (curMode == WIFI_MODE_AP) {
+    if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK) {
+      ESP_LOGE(TAG, "Falha ao alternar para APSTA para scan Wi-Fi.");
+      return results;
+    }
+  }
+
+  // Evita ESP_ERR_WIFI_STATE caso o STA esteja em tentativa de conexao ativa
+  bool wasConnected = false;
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
+  wasConnected = m_status.staConnected;
+  xSemaphoreGive(m_mutex);
+  if (!wasConnected) {
+    esp_timer_stop(m_reconnectTimer);
+    esp_wifi_disconnect();
+  }
+
+  wifi_scan_config_t scanCfg{};
+  scanCfg.show_hidden = false;
+  scanCfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+
+  ESP_LOGI(TAG, "Iniciando varredura de redes Wi-Fi...");
+  const esp_err_t scanErr = esp_wifi_scan_start(&scanCfg, true);
+  if (scanErr != ESP_OK) {
+    ESP_LOGW(TAG, "Falha no scan Wi-Fi: %s", esp_err_to_name(scanErr));
+    return results;
+  }
+
+  uint16_t apCount = 0;
+  if (esp_wifi_scan_get_ap_num(&apCount) != ESP_OK || apCount == 0) {
+    ESP_LOGI(TAG, "Scan Wi-Fi concluido: 0 redes encontradas.");
+    return results;
+  }
+
+  const uint16_t fetchCount = std::min<uint16_t>(apCount, 24);
+  std::vector<wifi_ap_record_t> records(fetchCount);
+  uint16_t actualCount = fetchCount;
+  if (esp_wifi_scan_get_ap_records(&actualCount, records.data()) != ESP_OK) {
+    return results;
+  }
+
+  for (uint16_t i = 0; i < actualCount; ++i) {
+    const char *rawSsid = reinterpret_cast<const char *>(records[i].ssid);
+    if (rawSsid[0] == '\0') continue;
+
+    // Deduplica SSIDs repetidos (mantem o de maior RSSI)
+    auto it = std::find_if(results.begin(), results.end(), [&](const WifiScanEntry &e) {
+      return std::strncmp(e.ssid, rawSsid, sizeof(e.ssid)) == 0;
+    });
+    if (it != results.end()) {
+      if (records[i].rssi > it->rssi) {
+        it->rssi = records[i].rssi;
+        it->authmode = static_cast<uint8_t>(records[i].authmode);
+        it->channel = records[i].primary;
+      }
+      continue;
+    }
+
+    WifiScanEntry entry{};
+    std::strncpy(entry.ssid, rawSsid, sizeof(entry.ssid) - 1);
+    entry.rssi = records[i].rssi;
+    entry.authmode = static_cast<uint8_t>(records[i].authmode);
+    entry.channel = records[i].primary;
+    results.push_back(entry);
+  }
+
+  std::sort(results.begin(), results.end(),
+            [](const WifiScanEntry &a, const WifiScanEntry &b) { return a.rssi > b.rssi; });
+  if (results.size() > maxResults) {
+    results.resize(maxResults);
+  }
+
+  ESP_LOGI(TAG, "Scan Wi-Fi concluido: %u redes unicas retornadas.", static_cast<unsigned>(results.size()));
+  return results;
 }
 
 void NetworkManager::triggerReconnect() {
@@ -213,11 +339,14 @@ void NetworkManager::apTimeoutCallback(void *arg) {
   static_cast<NetworkManager *>(arg)->stopSoftAp();
 }
 
-void NetworkManager::onWifiEvent(int32_t eventId, void *) {
+void NetworkManager::onWifiEvent(int32_t eventId, void *eventData) {
   if (eventId == WIFI_EVENT_STA_START) {
     wifi_config_t savedSta{};
     esp_wifi_get_config(WIFI_IF_STA, &savedSta);
     if (std::strlen(reinterpret_cast<const char *>(savedSta.sta.ssid)) > 0) {
+      xSemaphoreTake(m_mutex, portMAX_DELAY);
+      m_status.staConnecting = true;
+      xSemaphoreGive(m_mutex);
       esp_wifi_connect();
     }
   } else if (eventId == WIFI_EVENT_AP_STACONNECTED) {
@@ -225,10 +354,18 @@ void NetworkManager::onWifiEvent(int32_t eventId, void *) {
   } else if (eventId == WIFI_EVENT_AP_STADISCONNECTED) {
     ESP_LOGI(TAG, "Cliente desconectado do SoftAP.");
   } else if (eventId == WIFI_EVENT_STA_DISCONNECTED) {
+    uint8_t reason = 0;
+    if (eventData != nullptr) {
+      reason = static_cast<wifi_event_sta_disconnected_t *>(eventData)->reason;
+    }
     xSemaphoreTake(m_mutex, portMAX_DELAY);
     m_status.staConnected = false;
+    m_status.staConnecting = false;
     m_status.ip[0] = '\0';
     m_status.rssi = 0;
+    m_status.lastDisconnectReason = reason;
+    std::snprintf(m_status.lastError, sizeof(m_status.lastError), "%s (cod %u)",
+                  wifiDisconnectReasonToStr(reason), static_cast<unsigned>(reason));
     xSemaphoreGive(m_mutex);
 
     m_retryCount++;
@@ -237,8 +374,8 @@ void NetworkManager::onWifiEvent(int32_t eventId, void *) {
       startSoftApFallback();
     }
 
-    ESP_LOGW(TAG, "Wi-Fi desconectado. Proxima tentativa em %lu ms (operando offline).",
-             static_cast<unsigned long>(m_backoffMs));
+    ESP_LOGW(TAG, "Wi-Fi desconectado (reason=%u). Proxima tentativa em %lu ms (operando offline).",
+             static_cast<unsigned>(reason), static_cast<unsigned long>(m_backoffMs));
     esp_timer_stop(m_reconnectTimer);
     esp_timer_start_once(m_reconnectTimer, static_cast<uint64_t>(m_backoffMs) * 1000ULL);
     m_backoffMs = std::min<uint32_t>(m_backoffMs * 2, 300000);
@@ -259,6 +396,9 @@ void NetworkManager::onIpEvent(int32_t eventId, void *eventData) {
 
   xSemaphoreTake(m_mutex, portMAX_DELAY);
   m_status.staConnected = true;
+  m_status.staConnecting = false;
+  m_status.lastDisconnectReason = 0;
+  m_status.lastError[0] = '\0';
   m_status.rssi = rssi;
   std::strncpy(m_status.ssid, ssid, sizeof(m_status.ssid) - 1);
   std::snprintf(m_status.ip, sizeof(m_status.ip), IPSTR, IP2STR(&event->ip_info.ip));
@@ -281,7 +421,10 @@ void NetworkManager::onIpEvent(int32_t eventId, void *eventData) {
   }
 
   if (m_status.apActive) {
-    stopSoftAp();
+    // Mantem SoftAP por 15s para que a pagina em 192.168.4.1 exiba o IP obtido antes de encerrar o AP
+    esp_timer_stop(m_apTimeoutTimer);
+    esp_timer_start_once(m_apTimeoutTimer, 15ULL * 1000000ULL);
+    ESP_LOGI(TAG, "SoftAP sera encerrado em 15s (novo IP STA: %s).", m_status.ip);
   }
 }
 
