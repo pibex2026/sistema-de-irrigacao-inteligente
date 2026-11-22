@@ -1,43 +1,80 @@
-# Sistema de Irrigacao Inteligente - PIBEX 2026 - IFPE Paulista  
+# Sistema de Irrigação Inteligente - PIBEX 2026 - IFPE Paulista
 
-## Descrição do projeto
+Solução tecnológica e sustentável para automação agrícola de baixo custo, integrando **Internet das Coisas (IoT)**, **Inteligência Artificial Embarcada (TinyML)** e **Painel Web de Telemetria** para apoiar pequenos agricultores locais.
 
-## Integrantes
+---
 
-## Hardware utilizado
-### Microcontrolador escolhido
+## 📌 Descrição do Projeto
 
-ESP32
+O objetivo deste projeto é desenvolver um ecossistema integrado de monitoramento ambiental e acionamento inteligente de irrigação. Utilizando microcontroladores ESP32 alimentados por energia solar, o sistema monitora temperatura ambiente, umidade do ar e umidade do solo, tomando decisões autônomas no próprio hardware (*Edge Computing / TinyML*) para otimizar o uso da água e evitar desperdícios em lavouras comunitárias.
 
-Caracteristicas:
+---
 
-* Processador: CPU Xtensa Dual-Core 32-bit LX6 com clock ajustável até 240 MHz (desempenho de 600 DMIPS).
-* Memória RAM: 520 KB de SRAM interna para execução de dados e instruções de programas.
-* Memória Flash: Geralmente 4 MB (conectados via SPI) para armazenamento do código.
-* Wi-Fi: Integrado padrão 802.11 b/g/n operando na frequência de 2.4 GHz.
-* Bluetooth: Versão 4.2 suportando BR/EDR (clássico) e BLE (Bluetooth Low Energy).
-* Pinos GPIO: Até 36 pinos digitais multifuncionais (leitura, escrita e interrupções).
-* Conversor Analógico (ADC): 2 módulos de 12 bits com até 18 canais para leitura de sensores analógicos.
-* Conversor Digital (DAC): 2 canais de 8 bits para geração de sinais analógicos puros
-* Canais PWM: Até 16 canais independentes para controle de velocidade de motores e servos.
-* Barramentos de Comunicação: 3x UART, 3x SPI, 2x I2C e suporte nativo a barramento CAN Bus 2.0.
-* Consumo em Deep Sleep: Consumo ultra baixo de aproximadamente 10 µA a 15 µA mantendo o coprocessador ULP ativo.
-* Coprocessador ULP: Um terceiro núcleo de baixíssimo consumo para monitorar sensores enquanto a CPU principal dorme.
-* Segurança: Aceleração de hardware criptográfico para AES, SHA-2, RSA, ECC e RNG (gerador de números aleatórios).
+## 👥 Integrantes
 
-### Sensores utilizados
+* Projeto Institucional de Extensão (PIBEX 2026) - IFPE Campus Paulista
 
-* Temperatura e umidade do ar: DHT22
-* Umidade do solo: HW-080
+---
 
+## 🛠️ Arquitetura do Repositório
 
-## Checklists com [tasks](docs/TODO.md)
+```text
+├── embedded/          # Firmware ESP32 (PlatformIO, LittleFS, Drivers e Web Server Local)
+├── ai-model/          # Pipeline de IA (dataset sintético, treino MLP e conversão TinyML)
+├── web/
+│   ├── back/          # API REST Node.js / Express com autenticação JWT e PostgreSQL
+│   └── front/         # Interface Web de telemetria e controle do produtor
+├── docs/              # Levantamento bibliográfico, datasets e planejamento
+└── docker-compose.yml # Orquestração do ambiente backend + PostgreSQL
+```
 
-## Datasets
+---
 
-Os datasets consultados podem ser conferidos [aqui](docs/DATASETS.md)
+## ⚡ Hardware Utilizado
 
+### Microcontrolador Escolhido: ESP32
 
-## Artigos
+* **Processador:** CPU Xtensa Dual-Core 32-bit LX6 com clock de até 240 MHz.
+* **Memória:** 520 KB de SRAM interna e 4 MB de Flash SPI externa.
+* **Conectividade:** Wi-Fi 802.11 b/g/n (2.4 GHz) e Bluetooth v4.2 / BLE.
+* **Periféricos:** 2x ADCs de 12 bits, GPIOs com suporte a interrupções e canais PWM.
+* **Armazenamento Local:** Sistema de arquivos LittleFS montado em partição dedicada para logs CSV.
 
-Os datasets consultados podem ser conferidos [aqui](docs/ARCTICLES.md)
+### Sensores e Atuadores
+
+* **Temperatura e Umidade do Ar:** Sensor DHT22 (GPIO 5).
+* **Umidade do Solo:** Sensor resistivo/capacitivo HW-080 (ADC1 - GPIO 32).
+* **Atuador:** Válvula solenoide / Bomba d'água acionada por Módulo Relé (GPIO 25).
+
+---
+
+## 🚀 Como Executar
+
+### 1. Backend e Banco de Dados (Docker)
+```bash
+docker compose up -d
+```
+A API estará acessível em `http://localhost:8080/api`.
+
+### 2. Firmware Embarcado (ESP32 via PlatformIO)
+```bash
+cd embedded
+pio run -t upload
+pio run -t uploadfs # Faz o upload da interface web para a partição LittleFS
+```
+
+### 3. Pipeline do Modelo TinyML (Python)
+```bash
+cd ai-model
+pip install -r requirements.txt
+python train_tinyml.py
+```
+
+---
+
+## 📚 Documentação e Referências
+
+* [Planejamento e Tarefas (TODO)](docs/TODO.md)
+* [Checklists de Execução](CHECKLISTS.md)
+* [Datasets de Referência](docs/DATASETS.md)
+* [Artigos e Literatura Científica](docs/ARTICLES.md)

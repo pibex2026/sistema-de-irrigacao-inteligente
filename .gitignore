@@ -209,3 +209,6 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 *.stackdump
+
+# Datasets
+ai-model/datasets/
