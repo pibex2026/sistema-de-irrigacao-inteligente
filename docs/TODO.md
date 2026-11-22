@@ -11,8 +11,8 @@
   - [x] Criar biblioteca utilitária independente de frameworks (`utils.h` / `utils.cpp`)
   - [x] Implementar função `getFormattedTimestamp()` usando `<time.h>` padrão e `localtime_r` (thread-safe)
   - [x] Adicionar validação de sincronização NTP (retornar `nullptr` se o ano for anterior a 2020)
-  - [] Implementar Máquina de Estados (State Machine) no loop principal (`main.cpp`)
-  - [] Criar `enum class SystemState { INIT, READ_SENSORS, RUN_INFERENCE, EXECUTE_ACTION, ERROR }`
+  - [x] Implementar Máquina de Estados (State Machine) no loop principal (`main.cpp`)
+  - [x] Criar `enum class SystemState { INIT, READ_SENSORS, RUN_INFERENCE, EXECUTE_ACTION, ERROR }`
 
 ## 2. Módulo de Sensores (`SensorsManager`)
 
@@ -23,7 +23,7 @@
 - [x] **Umidade do Ar:** converter `float` para `uint8_t` (0 a 100%) com arredondamento seguro
 - [x] **Temperatura:** converter para ponto fixo `int16_t` (multiplicado por 10) para preservar 1 casa decimal sem usar `float` (ou `int8_t` sem decimais)
 - [x] Implementar tratamento de erros usando valores sentinela (ex: `-999` ou `255`) e validação com `isnan`
-- [] Integrar leitura física do sensor de umidade do solo (ADC1) com mapeamento percentual (`map()`)
+- [x] Integrar leitura física do sensor de umidade do solo (ADC1) com mapeamento percentual (`map()`)
 
 ## 3. Módulo de Conectividade (`NetworkManager`)
 
