@@ -49,7 +49,8 @@ esp_err_t LocalWebServer::start() {
   if (m_server != nullptr) return ESP_OK;
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.max_uri_handlers = 12;
+  config.max_uri_handlers = 22;
+  config.max_open_sockets = 11;
   config.stack_size = 6144;
   config.lru_purge_enable = true;
 
@@ -61,6 +62,15 @@ esp_err_t LocalWebServer::start() {
 
   const httpd_uri_t routes[] = {
       {"/", HTTP_GET, handleRoot, this},
+      {"/captive-portal-api", HTTP_GET, handleCaptivePortalApi, this},
+      {"/favicon.ico", HTTP_GET, handleFavicon, this},
+      {"/generate_204", HTTP_GET, handleCaptiveRedirect, this},
+      {"/generate_204", HTTP_HEAD, handleCaptiveRedirect, this},
+      {"/gen_204", HTTP_GET, handleCaptiveRedirect, this},
+      {"/hotspot-detect.html", HTTP_GET, handleCaptiveRedirect, this},
+      {"/connecttest.txt", HTTP_GET, handleCaptiveRedirect, this},
+      {"/ncsi.txt", HTTP_GET, handleCaptiveRedirect, this},
+      {"/redirect", HTTP_GET, handleCaptiveRedirect, this},
       {"/api/status", HTTP_GET, handleGetStatus, this},
       {"/api/performance", HTTP_GET, handleGetPerformance, this},
       {"/api/system", HTTP_GET, handleGetSystemInfo, this},
@@ -74,8 +84,12 @@ esp_err_t LocalWebServer::start() {
   };
 
   for (const auto &r : routes) {
-    httpd_register_uri_handler(m_server, &r);
+    const esp_err_t regErr = httpd_register_uri_handler(m_server, &r);
+    if (regErr != ESP_OK) {
+      ESP_LOGE(TAG, "Falha ao registrar rota %s: %s", r.uri, esp_err_to_name(regErr));
+    }
   }
+  httpd_register_err_handler(m_server, HTTPD_404_NOT_FOUND, handle404CaptiveRedirect);
 
   ESP_LOGI(TAG, "Servidor HTTP local iniciado na porta %d.", config.server_port);
   return ESP_OK;
@@ -123,6 +137,44 @@ esp_err_t LocalWebServer::handleRoot(httpd_req_t *req) {
       "<a href='/logs/readings.csv'>readings.csv</a> ou "
       "<a href='/logs/inference.csv'>inference.csv</a>.</p></body></html>";
   return httpd_resp_sendstr(req, fallback);
+}
+
+esp_err_t LocalWebServer::handleCaptivePortalApi(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Captive Portal API (RFC 8910) consultada.");
+  httpd_resp_set_type(req, "application/captive+json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
+  httpd_resp_set_hdr(req, "Connection", "close");
+  return httpd_resp_sendstr(
+      req, "{\"captive\":true,\"user-portal-url\":\"http://192.168.4.1/\"}");
+}
+
+esp_err_t LocalWebServer::handleFavicon(httpd_req_t *req) {
+  httpd_resp_set_status(req, "204 No Content");
+  return httpd_resp_send(req, nullptr, 0);
+}
+
+esp_err_t LocalWebServer::handleCaptiveRedirect(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Captive redirect: %s -> http://192.168.4.1/", req->uri);
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
+  httpd_resp_set_hdr(req, "Connection", "close");
+  if (req->method == HTTP_HEAD) {
+    return httpd_resp_send(req, nullptr, 0);
+  }
+  const char *body =
+      "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0;url=http://192.168.4.1/\">"
+      "</head><body><a href=\"http://192.168.4.1/\">Abrir Portal ESP-Irrigacao</a></body></html>";
+  return httpd_resp_sendstr(req, body);
+}
+
+esp_err_t LocalWebServer::handle404CaptiveRedirect(httpd_req_t *req, httpd_err_code_t) {
+  if (std::strncmp(req->uri, "/api/", 5) == 0 || std::strncmp(req->uri, "/logs/", 6) == 0) {
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not Found");
+    return ESP_FAIL;
+  }
+  return handleCaptiveRedirect(req);
 }
 
 esp_err_t LocalWebServer::handleGetStatus(httpd_req_t *req) {

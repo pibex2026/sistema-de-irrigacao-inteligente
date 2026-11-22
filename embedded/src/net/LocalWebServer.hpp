@@ -23,6 +23,10 @@ public:
 
 private:
   static esp_err_t handleRoot(httpd_req_t *req);
+  static esp_err_t handleCaptivePortalApi(httpd_req_t *req);
+  static esp_err_t handleFavicon(httpd_req_t *req);
+  static esp_err_t handleCaptiveRedirect(httpd_req_t *req);
+  static esp_err_t handle404CaptiveRedirect(httpd_req_t *req, httpd_err_code_t err);
   static esp_err_t handleGetStatus(httpd_req_t *req);
   static esp_err_t handleGetPerformance(httpd_req_t *req);
   static esp_err_t handleGetSystemInfo(httpd_req_t *req);
