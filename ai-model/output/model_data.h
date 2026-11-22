@@ -11,12 +11,12 @@
 // Baseado em: docs/AUDITORIA_TINYML_E_COMPARATIVO.md
 // ============================================================================
 // Golden Test Vectors (Validados no TFLite INT8 Interpreter):
-// Caso 1 (Sem Contexto - Solo Umido/Frio -> OFF): Temp=22.0C, Hum=78.0%, Soil=65.0%, VPD=0.58kPa, SoilID=0, CropID=0, StageID=0 => Class=0 (P0=0.996, P1=0.000, P2=0.000)
-// Caso 2 (Sem Contexto - Solo Seco/Quente -> IRRIGATE): Temp=34.0C, Hum=45.0%, Soil=22.0%, VPD=2.93kPa, SoilID=0, CropID=0, StageID=0 => Class=1 (P0=0.000, P1=0.996, P2=0.000)
-// Caso 3 (Sem Contexto - Calor Extremo + Solo Encharcado -> THERMAL_STRESS): Temp=38.0C, Hum=40.0%, Soil=75.0%, VPD=3.97kPa, SoilID=0, CropID=0, StageID=0 => Class=0 (P0=0.434, P1=0.129, P2=0.434)
-// Caso 4 (Com Contexto: Tomate em Solo Argiloso + Floracao - Seco -> IRRIGATE): Temp=33.0C, Hum=50.0%, Soil=28.0%, VPD=2.51kPa, SoilID=1, CropID=1, StageID=4 => Class=1 (P0=0.000, P1=0.996, P2=0.000)
-// Caso 5 (Com Contexto: Pimenta em Solo Arenoso + Germinacao - Calor + Umido -> THERMAL_STRESS): Temp=37.0C, Hum=42.0%, Soil=70.0%, VPD=3.64kPa, SoilID=2, CropID=2, StageID=1 => Class=2 (P0=0.004, P1=0.027, P2=0.973)
-// Caso 6 (Modo 6 - Apenas Cultura: Tomate [0,1,0] - Solo Seco -> IRRIGATE): Temp=31.0C, Hum=52.0%, Soil=25.0%, VPD=2.16kPa, SoilID=0, CropID=1, StageID=0 => Class=1 (P0=0.000, P1=0.996, P2=0.000)
+// Caso 1 (Sem Contexto - Solo Umido/Frio -> OFF): Temp=22.0C, Hum=78.0%, Soil=65.0%, VPD=0.58kPa, SoilID=0, CropID=0, StageID=0 => RawClass=0, FinalClass=0 (P0=0.996, P1=0.000, P2=0.000)
+// Caso 2 (Sem Contexto - Solo Seco/Quente -> IRRIGATE): Temp=34.0C, Hum=45.0%, Soil=22.0%, VPD=2.93kPa, SoilID=0, CropID=0, StageID=0 => RawClass=1, FinalClass=1 (P0=0.000, P1=0.996, P2=0.000)
+// Caso 3 (Sem Contexto - Calor Extremo + Solo Encharcado -> THERMAL_STRESS): Temp=38.0C, Hum=40.0%, Soil=75.0%, VPD=3.97kPa, SoilID=0, CropID=0, StageID=0 => RawClass=0, FinalClass=2 (P0=0.434, P1=0.129, P2=0.434)
+// Caso 4 (Com Contexto: Tomate em Solo Argiloso + Floracao - Seco -> IRRIGATE): Temp=33.0C, Hum=50.0%, Soil=28.0%, VPD=2.51kPa, SoilID=1, CropID=1, StageID=4 => RawClass=1, FinalClass=1 (P0=0.000, P1=0.996, P2=0.000)
+// Caso 5 (Com Contexto: Pimenta em Solo Arenoso + Germinacao - Calor + Umido -> THERMAL_STRESS): Temp=37.0C, Hum=42.0%, Soil=70.0%, VPD=3.64kPa, SoilID=2, CropID=2, StageID=1 => RawClass=2, FinalClass=2 (P0=0.004, P1=0.027, P2=0.973)
+// Caso 6 (Modo 6 - Apenas Cultura: Tomate [0,1,0] - Solo Seco -> IRRIGATE): Temp=31.0C, Hum=52.0%, Soil=25.0%, VPD=2.16kPa, SoilID=0, CropID=1, StageID=0 => RawClass=1, FinalClass=1 (P0=0.000, P1=0.996, P2=0.000)
 // ============================================================================
 
 namespace TinyMLConfig {
@@ -149,13 +149,35 @@ namespace TinyMLConfig {
     // Quantiza feature float32 para int8_t usando INPUT_SCALE e INPUT_ZERO_POINT
     inline int8_t quantizeInput(float value) {
         const int32_t q = static_cast<int32_t>(std::lround(value / INPUT_SCALE)) + INPUT_ZERO_POINT;
-        return static_cast<int8_t>(std::clamp(q, -128, 127));
+        return static_cast<int8_t>(std::clamp<int32_t>(q, -128, 127));
     }
 
     // Desquantiza saida int8_t para probabilidade float32 [0.0, 1.0]
     inline float dequantizeOutput(int8_t qValue) {
         return (static_cast<float>(qValue) - static_cast<float>(OUTPUT_ZERO_POINT)) * OUTPUT_SCALE;
     }
+
+    struct GoldenVector {
+        float tempC;
+        float humPct;
+        float soilPct;
+        uint8_t soilId;
+        uint8_t cropId;
+        uint8_t stageId;
+        uint8_t expectedRawClass;
+        uint8_t expectedFinalClass;
+        float expectedProbs[3];
+    };
+
+    constexpr uint8_t GOLDEN_VECTOR_COUNT = 6;
+    constexpr GoldenVector GOLDEN_VECTORS[GOLDEN_VECTOR_COUNT] = {
+        {22.0f, 78.0f, 65.0f, 0, 0, 0, 0, 0, {0.9961f, 0.0000f, 0.0000f}},
+        {34.0f, 45.0f, 22.0f, 0, 0, 0, 1, 1, {0.0000f, 0.9961f, 0.0000f}},
+        {38.0f, 40.0f, 75.0f, 0, 0, 0, 0, 2, {0.4336f, 0.1289f, 0.4336f}},
+        {33.0f, 50.0f, 28.0f, 1, 1, 4, 1, 1, {0.0000f, 0.9961f, 0.0000f}},
+        {37.0f, 42.0f, 70.0f, 2, 2, 1, 2, 2, {0.0039f, 0.0273f, 0.9727f}},
+        {31.0f, 52.0f, 25.0f, 0, 1, 0, 1, 1, {0.0000f, 0.9961f, 0.0000f}}
+    };
 }
 
 const unsigned int g_model_len = 5480;

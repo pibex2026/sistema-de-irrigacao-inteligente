@@ -749,7 +749,7 @@ namespace TinyMLConfig {{
     // Quantiza feature float32 para int8_t usando INPUT_SCALE e INPUT_ZERO_POINT
     inline int8_t quantizeInput(float value) {{
         const int32_t q = static_cast<int32_t>(std::lround(value / INPUT_SCALE)) + INPUT_ZERO_POINT;
-        return static_cast<int8_t>(std::clamp(q, -128, 127));
+        return static_cast<int8_t>(std::clamp<int32_t>(q, -128, 127));
     }}
 
     // Desquantiza saida int8_t para probabilidade float32 [0.0, 1.0]
