@@ -8,15 +8,20 @@
     :root { --bg:#0f172a; --card:#1e293b; --fg:#f8fafc; --muted:#94a3b8; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; --pri:#38bdf8; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--fg); padding:16px; }
-    .wrap { max-width:920px; margin:0 auto; display:grid; gap:14px; }
+    .wrap { max-width:980px; margin:0 auto; display:grid; gap:14px; }
     .card { background:var(--card); border-radius:12px; padding:16px; box-shadow:0 4px 12px rgba(0,0,0,.25); }
     h1 { margin:0 0 4px; font-size:1.3rem; }
     h2 { margin:0 0 12px; font-size:1.05rem; color:var(--pri); }
     .sub { color:var(--muted); font-size:.85rem; }
+    .nav { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .nav button { background:#0f172a; color:var(--muted); border:1px solid #334155; padding:8px 14px; border-radius:8px; font-weight:600; cursor:pointer; }
+    .nav button.active { background:var(--pri); color:#0f172a; border-color:var(--pri); }
+    .page { display:none; gap:14px; }
+    .page.active { display:grid; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
     .stat { background:#0f172a; padding:10px 12px; border-radius:8px; }
     .stat .k { font-size:.75rem; color:var(--muted); }
-    .stat .v { font-size:1.2rem; font-weight:700; margin-top:2px; }
+    .stat .v { font-size:1.15rem; font-weight:700; margin-top:2px; }
     .badge { display:inline-block; padding:3px 9px; border-radius:99px; font-size:.78rem; font-weight:600; }
     .b-ok { background:#14532d; color:#86efac; }
     .b-warn { background:#78350f; color:#fde68a; }
@@ -24,11 +29,16 @@
     label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:4px; }
     input, select { width:100%; padding:8px 10px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:var(--fg); }
     .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:10px; }
-    button { background:var(--pri); color:#0f172a; font-weight:700; border:none; padding:9px 14px; border-radius:8px; cursor:pointer; }
-    button.sec { background:#334155; color:var(--fg); }
-    button:hover { opacity:.9; }
+    button.btn-pri { background:var(--pri); color:#0f172a; font-weight:700; border:none; padding:9px 14px; border-radius:8px; cursor:pointer; }
+    button.sec { background:#334155; color:var(--fg); font-weight:600; border:none; padding:9px 14px; border-radius:8px; cursor:pointer; }
     .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
     a.btn { display:inline-block; text-decoration:none; background:#334155; color:var(--fg); padding:8px 12px; border-radius:8px; font-size:.85rem; }
+    table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    th, td { text-align:left; padding:7px 8px; border-bottom:1px solid #334155; }
+    th { color:var(--muted); font-weight:600; }
+    .bar { height:10px; background:#0f172a; border-radius:99px; overflow:hidden; margin-top:6px; }
+    .bar > div { height:100%; background:var(--pri); transition:width .3s; }
+    .table-wrap { overflow-x:auto; }
   </style>
 </head>
 <body>
@@ -36,96 +46,199 @@
     <div class="card">
       <h1>Sistema de Irrigacao Inteligente (ESP-IDF + TinyML INT8)</h1>
       <div class="sub">IFPE Campus Paulista - PIBEX 2026 | <span id="netInfo">Carregando...</span></div>
-    </div>
-
-    <div class="card">
-      <h2>Telemetria &amp; Decisao da IA (PhysMLP-27)</h2>
-      <div class="grid">
-        <div class="stat"><div class="k">Temperatura (DHT22)</div><div class="v" id="temp">--</div></div>
-        <div class="stat"><div class="k">Umidade do Ar</div><div class="v" id="hum">--</div></div>
-        <div class="stat"><div class="k">Umidade do Solo</div><div class="v" id="soil">--</div></div>
-        <div class="stat"><div class="k">ADC Bruto (HW-080)</div><div class="v" id="adc">--</div></div>
-        <div class="stat"><div class="k">Decisao IA</div><div class="v" id="dec">--</div></div>
-        <div class="stat"><div class="k">Valvula / Rele</div><div class="v" id="valve">--</div></div>
-      </div>
-      <div class="sub" style="margin-top:10px;">
-        Probabilidades [OFF, IRRIGATE, STRESS]: <strong id="probs">--</strong> |
-        Latencia: <strong id="lat">--</strong> us |
-        Heap livre: <strong id="heap">--</strong> B
+      <div class="nav">
+        <button id="tab-overview" class="active" onclick="showPage('overview')">Visao Geral &amp; Config</button>
+        <button id="tab-perf" onclick="showPage('perf')">Rendimento &amp; Execucao</button>
+        <button id="tab-sys" onclick="showPage('sys')">Placa &amp; Sistema</button>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Contexto Agronomico &amp; Parametros (NVS)</h2>
-      <div class="row">
-        <div>
-          <label>Tipo de Solo</label>
-          <select id="soilType">
-            <option value="0">0 - Nao Informado (UNKNOWN)</option>
-            <option value="1">1 - Clay Soil (Argiloso)</option>
-            <option value="2">2 - Sandy Soil (Arenoso)</option>
-            <option value="3">3 - Red Soil (Vermelho)</option>
-            <option value="4">4 - Loam Soil (Franco)</option>
-            <option value="5">5 - Black Soil (Terra Preta)</option>
-            <option value="6">6 - Alluvial Soil (Aluvial)</option>
-            <option value="7">7 - Chalky Soil (Calcario)</option>
-          </select>
+    <!-- PAGINA 1: VISAO GERAL & CONFIG -->
+    <div id="page-overview" class="page active">
+      <div class="card">
+        <h2>Telemetria &amp; Decisao da IA (PhysMLP-27)</h2>
+        <div class="grid">
+          <div class="stat"><div class="k">Temperatura (DHT22)</div><div class="v" id="temp">--</div></div>
+          <div class="stat"><div class="k">Umidade do Ar</div><div class="v" id="hum">--</div></div>
+          <div class="stat"><div class="k">Umidade do Solo</div><div class="v" id="soil">--</div></div>
+          <div class="stat"><div class="k">ADC Bruto (HW-080)</div><div class="v" id="adc">--</div></div>
+          <div class="stat"><div class="k">Decisao IA</div><div class="v" id="dec">--</div></div>
+          <div class="stat"><div class="k">Valvula / Rele</div><div class="v" id="valve">--</div></div>
         </div>
-        <div>
-          <label>Cultura (Crop)</label>
-          <select id="cropId">
-            <option value="0">0 - Padrao Hortalicas (UNKNOWN)</option>
-            <option value="1">1 - Tomato (Tomate)</option>
-            <option value="2">2 - Chilli (Pimenta/Pimentao)</option>
-            <option value="3">3 - Carrot (Cenoura)</option>
-            <option value="4">4 - Potato (Batata)</option>
-            <option value="5">5 - Wheat (Trigo)</option>
-          </select>
-        </div>
-        <div>
-          <label>Estagio Fenologico</label>
-          <select id="seedlingStage">
-            <option value="0">0 - Nao Informado (UNKNOWN)</option>
-            <option value="1">1 - Germination</option>
-            <option value="2">2 - Seedling Stage</option>
-            <option value="3">3 - Vegetative Growth</option>
-            <option value="4">4 - Flowering</option>
-            <option value="5">5 - Pollination</option>
-            <option value="6">6 - Fruit Formation</option>
-            <option value="7">7 - Maturation</option>
-            <option value="8">8 - Harvest</option>
-          </select>
+        <div class="sub" style="margin-top:10px;">
+          Probabilidades [OFF, IRRIGATE, STRESS]: <strong id="probs">--</strong> |
+          Latencia: <strong id="lat">--</strong> us |
+          Heap livre: <strong id="heap">--</strong> B
         </div>
       </div>
-      <div class="row">
-        <div><label>Limiar Confianca (0.30-0.95)</label><input id="confTh" type="number" step="0.05"></div>
-        <div><label>Timeout Valvula (ms)</label><input id="maxIrr" type="number" step="1000"></div>
-        <div><label>Cooldown (ms)</label><input id="cooldown" type="number" step="5000"></div>
-        <div><label>Intervalo Leitura (ms)</label><input id="readInt" type="number" step="1000"></div>
+
+      <div class="card">
+        <h2>Contexto Agronomico &amp; Parametros (NVS)</h2>
+        <div class="row">
+          <div>
+            <label>Tipo de Solo</label>
+            <select id="soilType">
+              <option value="0">0 - Nao Informado (UNKNOWN)</option>
+              <option value="1">1 - Clay Soil (Argiloso)</option>
+              <option value="2">2 - Sandy Soil (Arenoso)</option>
+              <option value="3">3 - Red Soil (Vermelho)</option>
+              <option value="4">4 - Loam Soil (Franco)</option>
+              <option value="5">5 - Black Soil (Terra Preta)</option>
+              <option value="6">6 - Alluvial Soil (Aluvial)</option>
+              <option value="7">7 - Chalky Soil (Calcario)</option>
+            </select>
+          </div>
+          <div>
+            <label>Cultura (Crop)</label>
+            <select id="cropId">
+              <option value="0">0 - Padrao Hortalicas (UNKNOWN)</option>
+              <option value="1">1 - Tomato (Tomate)</option>
+              <option value="2">2 - Chilli (Pimenta/Pimentao)</option>
+              <option value="3">3 - Carrot (Cenoura)</option>
+              <option value="4">4 - Potato (Batata)</option>
+              <option value="5">5 - Wheat (Trigo)</option>
+            </select>
+          </div>
+          <div>
+            <label>Estagio Fenologico</label>
+            <select id="seedlingStage">
+              <option value="0">0 - Nao Informado (UNKNOWN)</option>
+              <option value="1">1 - Germination</option>
+              <option value="2">2 - Seedling Stage</option>
+              <option value="3">3 - Vegetative Growth</option>
+              <option value="4">4 - Flowering</option>
+              <option value="5">5 - Pollination</option>
+              <option value="6">6 - Fruit Formation</option>
+              <option value="7">7 - Maturation</option>
+              <option value="8">8 - Harvest</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>Limiar Confianca (0.30-0.95)</label><input id="confTh" type="number" step="0.05"></div>
+          <div><label>Timeout Valvula (ms)</label><input id="maxIrr" type="number" step="1000"></div>
+          <div><label>Cooldown (ms)</label><input id="cooldown" type="number" step="5000"></div>
+          <div><label>Intervalo Leitura (ms)</label><input id="readInt" type="number" step="1000"></div>
+        </div>
+        <div class="actions">
+          <button class="btn-pri" onclick="saveConfig()">Salvar Configuracao</button>
+          <button class="sec" onclick="calibrate('dry')">Calibrar Solo SECO (ADC atual)</button>
+          <button class="sec" onclick="calibrate('wet')">Calibrar Solo UMIDO (ADC atual)</button>
+        </div>
       </div>
-      <div class="actions">
-        <button onclick="saveConfig()">Salvar Configuracao</button>
-        <button class="sec" onclick="calibrate('dry')">Calibrar Solo SECO (ADC atual)</button>
-        <button class="sec" onclick="calibrate('wet')">Calibrar Solo UMIDO (ADC atual)</button>
+
+      <div class="card">
+        <h2>Provisionamento Wi-Fi &amp; Logs CSV (LittleFS)</h2>
+        <div class="row">
+          <div><label>SSID da Rede Wi-Fi</label><input id="wifiSsid" type="text" placeholder="Nome do Wi-Fi"></div>
+          <div><label>Senha Wi-Fi</label><input id="wifiPass" type="password" placeholder="Senha"></div>
+        </div>
+        <div class="actions">
+          <button class="btn-pri" onclick="saveWifi()">Conectar Wi-Fi</button>
+          <a class="btn" href="/logs/readings.csv">Baixar readings.csv</a>
+          <a class="btn" href="/logs/inference.csv">Baixar inference.csv</a>
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Provisionamento Wi-Fi &amp; Logs CSV (LittleFS)</h2>
-      <div class="row">
-        <div><label>SSID da Rede Wi-Fi</label><input id="wifiSsid" type="text" placeholder="Nome do Wi-Fi"></div>
-        <div><label>Senha Wi-Fi</label><input id="wifiPass" type="password" placeholder="Senha"></div>
+    <!-- PAGINA 2: RENDIMENTO & EXECUCAO -->
+    <div id="page-perf" class="page">
+      <div class="card">
+        <h2>Metricas de Rendimento &amp; Execucao em Tempo Real</h2>
+        <div class="grid">
+          <div class="stat"><div class="k">Total de Inferencias</div><div class="v" id="p-inf">--</div></div>
+          <div class="stat"><div class="k">Leituras / Erros</div><div class="v" id="p-reads">--</div></div>
+          <div class="stat"><div class="k">Acionamentos Valvula</div><div class="v" id="p-valve">--</div></div>
+          <div class="stat"><div class="k">Distribuicao (0 / 1 / 2)</div><div class="v" id="p-dist">--</div></div>
+          <div class="stat"><div class="k">Latencia (Ult / Med)</div><div class="v" id="p-lat">--</div></div>
+          <div class="stat"><div class="k">Latencia (Min / Max)</div><div class="v" id="p-latmm">--</div></div>
+          <div class="stat"><div class="k">Arena TFLM Usada</div><div class="v" id="p-arena">--</div></div>
+          <div class="stat"><div class="k">Stack Livre (Core 1)</div><div class="v" id="p-stack">--</div></div>
+        </div>
       </div>
-      <div class="actions">
-        <button onclick="saveWifi()">Conectar Wi-Fi</button>
-        <a class="btn" href="/logs/readings.csv">Baixar readings.csv</a>
-        <a class="btn" href="/logs/inference.csv">Baixar inference.csv</a>
+
+      <div class="card">
+        <h2>Ultimas 15 Inferencias Registradas (LittleFS)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Temp</th>
+                <th>Ar</th>
+                <th>Solo</th>
+                <th>Decisao</th>
+                <th>P[0, 1, 2]</th>
+                <th>Valvula</th>
+              </tr>
+            </thead>
+            <tbody id="perf-tbody">
+              <tr><td colspan="7" class="sub">Carregando historico...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGINA 3: PLACA & SISTEMA -->
+    <div id="page-sys" class="page">
+      <div class="card">
+        <h2>Informacoes da Placa &amp; Clock (ESP32)</h2>
+        <div class="grid">
+          <div class="stat"><div class="k">Modelo / Cores</div><div class="v" id="s-model">--</div></div>
+          <div class="stat"><div class="k">Revisao / MAC</div><div class="v" id="s-mac">--</div></div>
+          <div class="stat"><div class="k">Clock CPU / XTAL</div><div class="v" id="s-clk">--</div></div>
+          <div class="stat"><div class="k">Temperatura</div><div class="v" id="s-temp">--</div></div>
+          <div class="stat"><div class="k">ESP-IDF / Reset</div><div class="v" id="s-idf">--</div></div>
+          <div class="stat"><div class="k">Uptime</div><div class="v" id="s-up">--</div></div>
+        </div>
+        <div class="sub" id="s-temp-note" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>Memoria RAM (Heap &amp; Tasks)</h2>
+        <div class="grid">
+          <div class="stat"><div class="k">Heap Usada / Total</div><div class="v" id="s-heap-use">--</div></div>
+          <div class="stat"><div class="k">Heap Livre Atual</div><div class="v" id="s-heap-free">--</div></div>
+          <div class="stat"><div class="k">Minimo Historico Livre</div><div class="v" id="s-heap-min">--</div></div>
+          <div class="stat"><div class="k">Maior Bloco Contiguo</div><div class="v" id="s-heap-blk">--</div></div>
+        </div>
+        <div class="bar"><div id="s-heap-bar" style="width:0%"></div></div>
+      </div>
+
+      <div class="card">
+        <h2>Armazenamento (Flash &amp; LittleFS)</h2>
+        <div class="grid">
+          <div class="stat"><div class="k">Flash Total / Particao</div><div class="v" id="s-flash">--</div></div>
+          <div class="stat"><div class="k">LittleFS Usado / Total</div><div class="v" id="s-lfs">--</div></div>
+          <div class="stat"><div class="k">readings.csv (+prev)</div><div class="v" id="s-rd-sz">--</div></div>
+          <div class="stat"><div class="k">inference.csv (+prev)</div><div class="v" id="s-inf-sz">--</div></div>
+        </div>
+        <div class="bar"><div id="s-lfs-bar" style="width:0%"></div></div>
       </div>
     </div>
   </div>
 
   <script>
     const decNames = ['0: OFF', '1: IRRIGATE', '2: THERMAL STRESS'];
+    let currentPage = 'overview';
+
+    function showPage(name) {
+      currentPage = name;
+      ['overview', 'perf', 'sys'].forEach(p => {
+        document.getElementById('page-' + p).classList.toggle('active', p === name);
+        document.getElementById('tab-' + p).classList.toggle('active', p === name);
+      });
+      if (name === 'perf') refreshPerformance();
+      if (name === 'sys') refreshSystem();
+    }
+
+    function fmtBytes(b) {
+      if (b >= 1048576) return (b / 1048576).toFixed(2) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
+
     async function refreshStatus() {
       try {
         const r = await fetch('/api/status');
@@ -145,6 +258,70 @@
         document.getElementById('netInfo').textContent = d.network.staConnected
           ? `Wi-Fi: ${d.network.ssid} (${d.network.ip}) | NTP: ${d.network.ntpSynced ? 'OK' : 'Aguardando'}`
           : (d.network.apActive ? 'Modo SoftAP (192.168.4.1)' : 'Modo Offline Autonomo');
+      } catch (e) {}
+    }
+
+    async function refreshPerformance() {
+      try {
+        const r = await fetch('/api/performance');
+        const d = await r.json();
+        const s = d.stats;
+        document.getElementById('p-inf').textContent = s.totalInferences;
+        document.getElementById('p-reads').textContent = `${s.totalSensorReads} / ${s.sensorErrorCount}`;
+        document.getElementById('p-valve').textContent = s.valveActivations;
+        document.getElementById('p-dist').textContent = `${s.countOff} / ${s.countIrrigate} / ${s.countThermalStress}`;
+        document.getElementById('p-lat').textContent = `${s.lastLatencyUs} / ${s.avgLatencyUs} us`;
+        document.getElementById('p-latmm').textContent = `${s.minLatencyUs} / ${s.maxLatencyUs} us`;
+        document.getElementById('p-arena').textContent = fmtBytes(s.tfliteArenaUsedBytes);
+        document.getElementById('p-stack').textContent = fmtBytes(s.controlTaskStackFreeBytes);
+
+        const tbody = document.getElementById('perf-tbody');
+        if (!d.recentInferences || d.recentInferences.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="sub">Nenhuma inferencia gravada ainda.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = d.recentInferences.map(x => `
+          <tr>
+            <td>${x.timestamp}</td>
+            <td>${x.tempC.toFixed(1)}°C</td>
+            <td>${x.humPct}%</td>
+            <td>${x.soilPct}%</td>
+            <td>${decNames[x.decision] || x.decision}${x.fallback ? ' *' : ''}</td>
+            <td>[${x.p0.toFixed(2)}, ${x.p1.toFixed(2)}, ${x.p2.toFixed(2)}]</td>
+            <td>${x.valveOpen ? 'ABERTA' : 'FECHADA'}</td>
+          </tr>
+        `).join('');
+      } catch (e) {}
+    }
+
+    async function refreshSystem() {
+      try {
+        const r = await fetch('/api/system');
+        const d = await r.json();
+        document.getElementById('s-model').textContent = `ESP32 (${d.board.cores} cores)`;
+        document.getElementById('s-mac').textContent = `rev ${d.board.revision} | ${d.board.mac}`;
+        document.getElementById('s-clk').textContent = `${d.clock.cpuFreqMhz} / ${d.clock.xtalFreqMhz} MHz`;
+        document.getElementById('s-temp').textContent = d.temperature.ambientValid
+          ? `${d.temperature.ambientDht22C.toFixed(1)} °C (DHT22)` : 'N/A';
+        document.getElementById('s-temp-note').textContent = d.temperature.note;
+        document.getElementById('s-idf').textContent = `${d.board.idfVersion} | ${d.board.resetReason}`;
+        document.getElementById('s-up').textContent = `${d.board.uptimeSec} s`;
+
+        const m = d.memory;
+        const heapPct = m.totalHeapBytes > 0 ? Math.round((m.usedHeapBytes / m.totalHeapBytes) * 100) : 0;
+        document.getElementById('s-heap-use').textContent = `${fmtBytes(m.usedHeapBytes)} / ${fmtBytes(m.totalHeapBytes)} (${heapPct}%)`;
+        document.getElementById('s-heap-free').textContent = fmtBytes(m.freeHeapBytes);
+        document.getElementById('s-heap-min').textContent = fmtBytes(m.minFreeHeapBytes);
+        document.getElementById('s-heap-blk').textContent = fmtBytes(m.largestFreeBlockBytes);
+        document.getElementById('s-heap-bar').style.width = heapPct + '%';
+
+        const st = d.storage;
+        const lfsPct = st.littlefsTotalBytes > 0 ? Math.round((st.littlefsUsedBytes / st.littlefsTotalBytes) * 100) : 0;
+        document.getElementById('s-flash').textContent = `${fmtBytes(st.flashSizeBytes)} (${st.runningPartition})`;
+        document.getElementById('s-lfs').textContent = `${fmtBytes(st.littlefsUsedBytes)} / ${fmtBytes(st.littlefsTotalBytes)} (${lfsPct}%)`;
+        document.getElementById('s-rd-sz').textContent = `${fmtBytes(st.readingsCsvBytes)} (+${fmtBytes(st.readingsPrevBytes)})`;
+        document.getElementById('s-inf-sz').textContent = `${fmtBytes(st.inferenceCsvBytes)} (+${fmtBytes(st.inferencePrevBytes)})`;
+        document.getElementById('s-lfs-bar').style.width = lfsPct + '%';
       } catch (e) {}
     }
 
@@ -190,7 +367,11 @@
 
     loadConfig();
     refreshStatus();
-    setInterval(refreshStatus, 3000);
+    setInterval(() => {
+      refreshStatus();
+      if (currentPage === 'perf') refreshPerformance();
+      if (currentPage === 'sys') refreshSystem();
+    }, 3000);
   </script>
 </body>
 </html>

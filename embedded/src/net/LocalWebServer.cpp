@@ -1,7 +1,15 @@
 #include "LocalWebServer.hpp"
 #include "cJSON.h"
 #include "config.hpp"
+#include "esp_chip_info.h"
+#include "esp_clk_tree.h"
+#include "esp_flash.h"
+#include "esp_heap_caps.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
+#include "esp_mac.h"
+#include "esp_ota_ops.h"
+#include "esp_system.h"
 #include <cstdio>
 #include <cstring>
 
@@ -54,6 +62,8 @@ esp_err_t LocalWebServer::start() {
   const httpd_uri_t routes[] = {
       {"/", HTTP_GET, handleRoot, this},
       {"/api/status", HTTP_GET, handleGetStatus, this},
+      {"/api/performance", HTTP_GET, handleGetPerformance, this},
+      {"/api/system", HTTP_GET, handleGetSystemInfo, this},
       {"/api/config", HTTP_GET, handleGetConfig, this},
       {"/api/config", HTTP_POST, handlePostConfig, this},
       {"/api/wifi", HTTP_POST, handlePostWifi, this},
@@ -158,6 +168,142 @@ esp_err_t LocalWebServer::handleGetStatus(httpd_req_t *req) {
   cJSON_AddNumberToObject(netObj, "rssi", net.rssi);
   cJSON_AddStringToObject(netObj, "ssid", net.ssid);
   cJSON_AddStringToObject(netObj, "ip", net.ip);
+
+  char *jsonStr = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  httpd_resp_set_type(req, "application/json");
+  const esp_err_t res = httpd_resp_sendstr(req, jsonStr ? jsonStr : "{}");
+  std::free(jsonStr);
+  return res;
+}
+
+esp_err_t LocalWebServer::handleGetPerformance(httpd_req_t *req) {
+  auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  const SystemSnapshot snap = self->getSnapshot();
+  const auto recentInf = self->m_logger.readRecentInferences(15);
+
+  cJSON *root = cJSON_CreateObject();
+  cJSON *p = cJSON_AddObjectToObject(root, "stats");
+  cJSON_AddNumberToObject(p, "uptimeSec", snap.uptimeSec);
+  cJSON_AddNumberToObject(p, "totalSensorReads", snap.performance.totalSensorReads);
+  cJSON_AddNumberToObject(p, "sensorErrorCount", snap.performance.sensorErrorCount);
+  cJSON_AddNumberToObject(p, "totalInferences", snap.performance.totalInferences);
+  cJSON_AddNumberToObject(p, "countOff", snap.performance.countOff);
+  cJSON_AddNumberToObject(p, "countIrrigate", snap.performance.countIrrigate);
+  cJSON_AddNumberToObject(p, "countThermalStress", snap.performance.countThermalStress);
+  cJSON_AddNumberToObject(p, "valveActivations", snap.performance.valveActivations);
+  cJSON_AddNumberToObject(p, "lastLatencyUs", snap.performance.lastLatencyUs);
+  cJSON_AddNumberToObject(p, "minLatencyUs", snap.performance.minLatencyUs);
+  cJSON_AddNumberToObject(p, "maxLatencyUs", snap.performance.maxLatencyUs);
+  cJSON_AddNumberToObject(p, "avgLatencyUs", snap.performance.avgLatencyUs);
+  cJSON_AddNumberToObject(p, "tfliteArenaUsedBytes", snap.performance.tfliteArenaUsedBytes);
+  cJSON_AddNumberToObject(p, "controlTaskStackFreeBytes", snap.performance.controlTaskStackFreeBytes);
+
+  cJSON *history = cJSON_AddArrayToObject(root, "recentInferences");
+  for (const auto &e : recentInf) {
+    cJSON *item = cJSON_CreateObject();
+    cJSON_AddNumberToObject(item, "tempC", e.sensors.getTemperatureC());
+    cJSON_AddNumberToObject(item, "humPct", e.sensors.humidity);
+    cJSON_AddNumberToObject(item, "soilPct", e.sensors.soilMoisture);
+    cJSON_AddNumberToObject(item, "decision", static_cast<int>(e.inference.decision));
+    cJSON_AddBoolToObject(item, "valveOpen", e.valveOpen);
+    cJSON_AddBoolToObject(item, "fallback", e.inference.fallbackTriggered);
+    cJSON_AddNumberToObject(item, "p0", e.inference.probabilities[0]);
+    cJSON_AddNumberToObject(item, "p1", e.inference.probabilities[1]);
+    cJSON_AddNumberToObject(item, "p2", e.inference.probabilities[2]);
+    cJSON_AddStringToObject(item, "timestamp", e.inference.timestamp);
+    cJSON_AddItemToArray(history, item);
+  }
+
+  char *jsonStr = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+  httpd_resp_set_type(req, "application/json");
+  const esp_err_t res = httpd_resp_sendstr(req, jsonStr ? jsonStr : "{}");
+  std::free(jsonStr);
+  return res;
+}
+
+static const char *resetReasonToStr(esp_reset_reason_t r) {
+  switch (r) {
+  case ESP_RST_POWERON: return "POWERON";
+  case ESP_RST_SW: return "SW_RESET";
+  case ESP_RST_PANIC: return "PANIC";
+  case ESP_RST_INT_WDT: return "INT_WDT";
+  case ESP_RST_TASK_WDT: return "TASK_WDT";
+  case ESP_RST_WDT: return "WDT";
+  case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+  case ESP_RST_BROWNOUT: return "BROWNOUT";
+  default: return "OTHER";
+  }
+}
+
+esp_err_t LocalWebServer::handleGetSystemInfo(httpd_req_t *req) {
+  auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  const SystemSnapshot snap = self->getSnapshot();
+  const StorageStats st = self->m_logger.getStorageStats();
+
+  esp_chip_info_t chipInfo{};
+  esp_chip_info(&chipInfo);
+
+  uint8_t mac[6] = {};
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macStr[18];
+  std::snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  uint32_t cpuHz = 0, xtalHz = 0;
+  esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_CPU, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &cpuHz);
+  esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_XTAL, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &xtalHz);
+
+  uint32_t flashSize = 0;
+  esp_flash_get_size(nullptr, &flashSize);
+  const esp_partition_t *runningPart = esp_ota_get_running_partition();
+
+  const uint32_t totalHeap = static_cast<uint32_t>(heap_caps_get_total_size(MALLOC_CAP_8BIT));
+  const uint32_t freeHeap = esp_get_free_heap_size();
+  const uint32_t minFreeHeap = esp_get_minimum_free_heap_size();
+  const uint32_t largestBlock = static_cast<uint32_t>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+  cJSON *root = cJSON_CreateObject();
+
+  cJSON *board = cJSON_AddObjectToObject(root, "board");
+  cJSON_AddStringToObject(board, "model", "ESP32 (Xtensa Dual-Core LX6)");
+  cJSON_AddNumberToObject(board, "cores", chipInfo.cores);
+  cJSON_AddNumberToObject(board, "revision", chipInfo.revision);
+  cJSON_AddStringToObject(board, "mac", macStr);
+  cJSON_AddStringToObject(board, "idfVersion", esp_get_idf_version());
+  cJSON_AddStringToObject(board, "resetReason", resetReasonToStr(esp_reset_reason()));
+  cJSON_AddNumberToObject(board, "uptimeSec", snap.uptimeSec);
+
+  cJSON *clk = cJSON_AddObjectToObject(root, "clock");
+  cJSON_AddNumberToObject(clk, "cpuFreqMhz", cpuHz / 1000000.0);
+  cJSON_AddNumberToObject(clk, "xtalFreqMhz", xtalHz / 1000000.0);
+
+  cJSON *temp = cJSON_AddObjectToObject(root, "temperature");
+  cJSON_AddBoolToObject(temp, "internalSupported", false);
+  cJSON_AddStringToObject(temp, "note", "Sensor interno nao suportado no ESP32 classico (IDF v5.5)");
+  cJSON_AddNumberToObject(temp, "ambientDht22C", snap.lastSensors.valid ? snap.lastSensors.getTemperatureC() : 0.0);
+  cJSON_AddBoolToObject(temp, "ambientValid", snap.lastSensors.valid);
+
+  cJSON *mem = cJSON_AddObjectToObject(root, "memory");
+  cJSON_AddNumberToObject(mem, "totalHeapBytes", totalHeap);
+  cJSON_AddNumberToObject(mem, "freeHeapBytes", freeHeap);
+  cJSON_AddNumberToObject(mem, "usedHeapBytes", totalHeap > freeHeap ? (totalHeap - freeHeap) : 0);
+  cJSON_AddNumberToObject(mem, "minFreeHeapBytes", minFreeHeap);
+  cJSON_AddNumberToObject(mem, "largestFreeBlockBytes", largestBlock);
+  cJSON_AddNumberToObject(mem, "tfliteArenaUsedBytes", snap.performance.tfliteArenaUsedBytes);
+  cJSON_AddNumberToObject(mem, "controlTaskStackFreeBytes", snap.performance.controlTaskStackFreeBytes);
+
+  cJSON *stor = cJSON_AddObjectToObject(root, "storage");
+  cJSON_AddNumberToObject(stor, "flashSizeBytes", flashSize);
+  cJSON_AddStringToObject(stor, "runningPartition", runningPart ? runningPart->label : "unknown");
+  cJSON_AddBoolToObject(stor, "littlefsMounted", st.mounted);
+  cJSON_AddNumberToObject(stor, "littlefsTotalBytes", st.totalBytes);
+  cJSON_AddNumberToObject(stor, "littlefsUsedBytes", st.usedBytes);
+  cJSON_AddNumberToObject(stor, "readingsCsvBytes", st.readingsBytes);
+  cJSON_AddNumberToObject(stor, "readingsPrevBytes", st.readingsPrevBytes);
+  cJSON_AddNumberToObject(stor, "inferenceCsvBytes", st.inferenceBytes);
+  cJSON_AddNumberToObject(stor, "inferencePrevBytes", st.inferencePrevBytes);
 
   char *jsonStr = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);

@@ -19,6 +19,7 @@ public:
 
   std::vector<SensorData> readRecentReadings(size_t maxCount) const;
   std::vector<InferenceLogEntry> readRecentInferences(size_t maxCount) const;
+  StorageStats getStorageStats() const;
 
   SemaphoreHandle_t getMutex() const { return m_mutex; }
 

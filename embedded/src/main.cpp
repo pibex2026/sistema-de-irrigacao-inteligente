@@ -35,6 +35,9 @@ static void controlTask(void *) {
   int64_t lastLogMs = -1000000;
   uint8_t consecutiveSensorErrors = 0;
   bool modelReady = false;
+  bool prevValveOpen = false;
+  uint64_t latencyAccumUs = 0;
+  PerformanceStats perf{};
 
   while (true) {
     esp_task_wdt_reset();
@@ -50,6 +53,7 @@ static void controlTask(void *) {
         ESP_LOGE(TAG, "Modelo TinyML indisponivel. Entrando em modo ERROR.");
         currentState = SystemState::ERROR;
       } else {
+        perf.tfliteArenaUsedBytes = static_cast<uint32_t>(g_modelMgr.getArenaUsedBytes());
         if (!g_modelMgr.runGoldenSelfTest()) {
           ESP_LOGW(TAG, "Aviso: um ou mais Golden Test Vectors divergiram.");
         }
@@ -62,6 +66,7 @@ static void controlTask(void *) {
       if ((nowMs - lastReadMs) >= static_cast<int64_t>(cfg.sensorReadIntervalMs)) {
         lastReadMs = nowMs;
         lastSensorData = g_sensorsMgr.readSensors(cfg);
+        perf.totalSensorReads++;
 
         ESP_LOGI(TAG, "[Sensores] T=%.1f C | RH=%u%% | Solo=%u%% (ADC=%u) | Valido=%s | %s",
                  lastSensorData.getTemperatureC(),
@@ -72,6 +77,7 @@ static void controlTask(void *) {
                  lastSensorData.timestamp);
 
         if (!lastSensorData.valid) {
+          perf.sensorErrorCount++;
           consecutiveSensorErrors++;
           if (consecutiveSensorErrors >= Config::Hardware::MAX_CONSECUTIVE_SENSOR_FAILURES) {
             ESP_LOGE(TAG, "%u falhas seguidas de leitura de sensores -> ERROR!",
@@ -104,6 +110,17 @@ static void controlTask(void *) {
         currentState = SystemState::ERROR;
         break;
       }
+
+      perf.totalInferences++;
+      if (lastInference.decision == IrrigationDecision::OFF) perf.countOff++;
+      else if (lastInference.decision == IrrigationDecision::IRRIGATE) perf.countIrrigate++;
+      else if (lastInference.decision == IrrigationDecision::THERMAL_STRESS_WET_SOIL) perf.countThermalStress++;
+
+      perf.lastLatencyUs = lastInference.latencyUs;
+      if (perf.minLatencyUs == 0 || lastInference.latencyUs < perf.minLatencyUs) perf.minLatencyUs = lastInference.latencyUs;
+      if (lastInference.latencyUs > perf.maxLatencyUs) perf.maxLatencyUs = lastInference.latencyUs;
+      latencyAccumUs += lastInference.latencyUs;
+      perf.avgLatencyUs = static_cast<uint32_t>(latencyAccumUs / perf.totalInferences);
 
       ESP_LOGI(TAG, "[IA INT8] Decisao=%u | P=[%.3f, %.3f, %.3f] | Irrigar=%s | Stress=%s | Fallback=%s | %lu us",
                static_cast<unsigned>(lastInference.decision),
@@ -154,11 +171,19 @@ static void controlTask(void *) {
     }
     }
 
+    const ActuatorStatus curAct = g_actuatorMgr.getStatus();
+    if (curAct.valveOpen && !prevValveOpen) {
+      perf.valveActivations++;
+    }
+    prevValveOpen = curAct.valveOpen;
+    perf.controlTaskStackFreeBytes = static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+
     SystemSnapshot snap{};
     snap.state = currentState;
     snap.lastSensors = lastSensorData;
     snap.lastInference = lastInference;
-    snap.actuator = g_actuatorMgr.getStatus();
+    snap.actuator = curAct;
+    snap.performance = perf;
     snap.freeHeapBytes = esp_get_free_heap_size();
     snap.uptimeSec = TimeUtils::getUptimeSec();
     g_webServer.updateSnapshot(snap);

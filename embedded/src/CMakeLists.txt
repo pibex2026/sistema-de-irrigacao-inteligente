@@ -30,6 +30,8 @@ idf_component_register(
         driver
         json
         esp_system
+        app_update
+        spi_flash
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE

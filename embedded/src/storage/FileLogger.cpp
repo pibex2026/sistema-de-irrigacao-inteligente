@@ -237,3 +237,27 @@ std::vector<InferenceLogEntry> FileLogger::readRecentInferences(size_t maxCount)
   xSemaphoreGive(m_mutex);
   return {};
 }
+
+StorageStats FileLogger::getStorageStats() const {
+  StorageStats stats{};
+  stats.mounted = m_mounted;
+  if (!m_mounted || m_mutex == nullptr) return stats;
+
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
+  size_t total = 0, used = 0;
+  if (esp_littlefs_info(Config::Storage::LITTLEFS_PARTITION_LABEL, &total, &used) == ESP_OK) {
+    stats.totalBytes = static_cast<uint32_t>(total);
+    stats.usedBytes = static_cast<uint32_t>(used);
+  }
+
+  auto fileSize = [](const char *path) -> uint32_t {
+    struct stat st{};
+    return (stat(path, &st) == 0) ? static_cast<uint32_t>(st.st_size) : 0;
+  };
+  stats.readingsBytes = fileSize(Config::Storage::READINGS_CSV_PATH);
+  stats.readingsPrevBytes = fileSize(Config::Storage::READINGS_PREV_PATH);
+  stats.inferenceBytes = fileSize(Config::Storage::INFERENCE_CSV_PATH);
+  stats.inferencePrevBytes = fileSize(Config::Storage::INFERENCE_PREV_PATH);
+  xSemaphoreGive(m_mutex);
+  return stats;
+}

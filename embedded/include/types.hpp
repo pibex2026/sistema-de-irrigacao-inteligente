@@ -92,12 +92,39 @@ struct NetworkStatus {
   char ip[16] = "";
 };
 
+struct PerformanceStats {
+  uint32_t totalSensorReads = 0;
+  uint32_t sensorErrorCount = 0;
+  uint32_t totalInferences = 0;
+  uint32_t countOff = 0;
+  uint32_t countIrrigate = 0;
+  uint32_t countThermalStress = 0;
+  uint32_t valveActivations = 0;
+  uint32_t lastLatencyUs = 0;
+  uint32_t minLatencyUs = 0;
+  uint32_t maxLatencyUs = 0;
+  uint32_t avgLatencyUs = 0;
+  uint32_t tfliteArenaUsedBytes = 0;
+  uint32_t controlTaskStackFreeBytes = 0;
+};
+
+struct StorageStats {
+  bool mounted = false;
+  uint32_t totalBytes = 0;
+  uint32_t usedBytes = 0;
+  uint32_t readingsBytes = 0;
+  uint32_t readingsPrevBytes = 0;
+  uint32_t inferenceBytes = 0;
+  uint32_t inferencePrevBytes = 0;
+};
+
 struct SystemSnapshot {
   SystemState state = SystemState::INIT;
   SensorData lastSensors;
   InferenceResult lastInference;
   ActuatorStatus actuator;
   NetworkStatus network;
+  PerformanceStats performance;
   uint32_t freeHeapBytes = 0;
   uint32_t uptimeSec = 0;
 };

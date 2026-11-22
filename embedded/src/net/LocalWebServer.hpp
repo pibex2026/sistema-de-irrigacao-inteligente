@@ -24,6 +24,8 @@ public:
 private:
   static esp_err_t handleRoot(httpd_req_t *req);
   static esp_err_t handleGetStatus(httpd_req_t *req);
+  static esp_err_t handleGetPerformance(httpd_req_t *req);
+  static esp_err_t handleGetSystemInfo(httpd_req_t *req);
   static esp_err_t handleGetConfig(httpd_req_t *req);
   static esp_err_t handlePostConfig(httpd_req_t *req);
   static esp_err_t handlePostWifi(httpd_req_t *req);
