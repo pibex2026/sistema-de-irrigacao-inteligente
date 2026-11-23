@@ -37,6 +37,19 @@ const authController = {
             console.error('Erro no login:', error);
             return res.status(500).json({ error: 'Erro interno ao processar login.' });
         }
+    },
+
+    async me(req, res) {
+        try {
+            const user = await authService.getProfile(req.user.id);
+            return res.status(200).json({ user });
+        } catch (error) {
+            if (error.statusCode) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error('Erro ao buscar perfil:', error);
+            return res.status(500).json({ error: 'Erro interno ao buscar perfil.' });
+        }
     }
 };
 

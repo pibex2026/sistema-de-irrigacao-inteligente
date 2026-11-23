@@ -7,6 +7,12 @@ const UserModel = {
         return rows[0];
     },
 
+    async findById(id) {
+        const queryText = 'SELECT id, nome, email, criado_em FROM usuarios WHERE id = $1';
+        const { rows } = await db.query(queryText, [id]);
+        return rows[0];
+    },
+
     async create(nome, email, passwordHash) {
         const queryText = `
             INSERT INTO usuarios (nome, email, senha) 

@@ -1,11 +1,14 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') }); 
 require('dotenv').config(); // Fallback se houver .env na pasta local
+const { validateEnv } = require('./configs/env');
+validateEnv();
 require('./configs/db'); 
 
 const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
+const telemetryRoutes = require('./routes/telemetryRoutes');
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -14,6 +17,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api', telemetryRoutes);
 
 app.get('/api', (req, res) => {
     res.json({ status: "Backend operacional" });

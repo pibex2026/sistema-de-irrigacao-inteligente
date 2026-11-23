@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const UserModel = require('../models/userModel');
+const { getJwtSecret } = require('../configs/env');
 
 const authService = {
     async registerUser(nome, email, senha) {
@@ -46,10 +47,7 @@ const authService = {
             throw err;
         }
 
-        const secret = process.env.JWT_SECRET || 'chave_secreta_provisoria_pibex';
-        if (!process.env.JWT_SECRET) {
-            console.warn('[AVISO DE SEGURANÇA] JWT_SECRET não definido. Utilizando chave provisória padrão.');
-        }
+        const secret = getJwtSecret();
 
         const token = jwt.sign(
             { id: user.id, email: user.email },
@@ -61,6 +59,16 @@ const authService = {
             user: { id: user.id, nome: user.nome, email: user.email },
             token
         };
+    },
+
+    async getProfile(userId) {
+        const user = await UserModel.findById(userId);
+        if (!user) {
+            const err = new Error('Usuário não encontrado.');
+            err.statusCode = 404;
+            throw err;
+        }
+        return user;
     }
 };
 
