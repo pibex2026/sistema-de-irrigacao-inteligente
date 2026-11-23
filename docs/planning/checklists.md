@@ -19,7 +19,7 @@ Acompanhe abaixo as etapas de desenvolvimento e o status de cada entrega do proj
 - [ ] **Mapeamento Local:** Visitar agricultores de Paulista-PE para elencar os vegetais cultivados e analisar suas necessidades hídricas.
 
 ### Fase 2: Engenharia de Software e Nuvem
-- [ ] **Desenvolvimento de Software:** Criar o aplicativo de interface para o agricultor e configurar a nuvem IoT (ex: ThingSpeak) para coleta de dados.
+- [ ] **Desenvolvimento de Software:** Criar o aplicativo de interface para o agricultor e configurar o backend próprio (Node.js/Express + PostgreSQL) para coleta de dados.
 
 ### Fase 3: Engenharia de Hardware e IA
 - [ ] **Desenvolvimento de Hardware:** Montar o dispositivo físico usando microcontrolador (plataforma ESP32), painel solar, atuadores e sensores.
@@ -39,4 +39,4 @@ Acompanhe abaixo as etapas de desenvolvimento e o status de cada entrega do proj
 
 *   **Hardware:** ESP32, Sensores de Umidade do Solo/Ar, Painel Solar, Moto-bomba.
 *   **Inteligência Artificial:** Modelos preditivos leves otimizados via TinyML.
-*   **IoT & Cloud:** Plataformas de telemetria e dashboards (ex: ThingSpeak).
+*   **IoT & Cloud:** Backend próprio em Node.js/Express + PostgreSQL e painel Web.

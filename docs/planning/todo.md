@@ -4,11 +4,11 @@
 
 ## 1. Arquitetura Geral & Configurações de Base
 
-- [x] Criar arquivo de configuração global (`config.h`)
+- [x] Criar arquivo de configuração global (`config.hpp`)
   - [x] Implementar estrutura usando C++ moderno (`namespace Config`)
-  - [x] Definir pinagem dos sensores usando `constexpr uint8_t` (Mapear analógicos no ADC1: GPIO 32/33)
+  - [x] Definir pinagem dos sensores usando `constexpr` (Mapear analógicos no ADC1: GPIO 32)
   - [x] Definir intervalos de amostragem e constantes de tempo
-  - [x] Criar biblioteca utilitária independente de frameworks (`utils.h` / `utils.cpp`)
+  - [x] Criar biblioteca utilitária independente de frameworks (`TimeUtils.hpp` / `TimeUtils.cpp`)
   - [x] Implementar função `getFormattedTimestamp()` usando `<time.h>` padrão e `localtime_r` (thread-safe)
   - [x] Adicionar validação de sincronização NTP (retornar `nullptr` se o ano for anterior a 2020)
   - [x] Implementar Máquina de Estados (State Machine) no loop principal (`main.cpp`)
@@ -25,15 +25,15 @@
 - [x] Implementar tratamento de erros usando valores sentinela (ex: `-999` ou `255`) e validação com `isnan`
 - [x] Integrar leitura física do sensor de umidade do solo (ADC1) com mapeamento percentual (`map()`)
 
-## 3. Módulo de Conectividade (`NetworkManager`)
+## 3. Módulo de Conectividade (`NetworkManager` & `LocalWebServer`)
 
-- [x] Criar classe `NetworkManager` para encapsular a lógica de rede
-- [x] Integrar `WiFiManager` para provisionamento dinâmico de rede sem credenciais hardcoded
-- [x] Configurar `EspWebServer` para criar uma interface de monitoramento local
-- [x] Configurar `ESPmDNS` para acesso amigável na rede local.
-- [x] Sincronizar o relógio interno do ESP32 com o servidor NTP (`pool.ntp.org`) apenas uma vez após a conexão Wi-Fi ser estabelecida
+- [x] Criar classe `NetworkManager` para encapsular a lógica de rede (ESP-IDF Wi-Fi + SoftAP fallback)
+- [x] Integrar portal cativo DNS/DHCP (RFC 8910) para provisionamento dinâmico de rede sem credenciais hardcoded
+- [x] Configurar `LocalWebServer` (`esp_http_server`) para criar uma interface de monitoramento local
+- [x] Configurar `espressif/mdns` para acesso amigável na rede local (`irrigacao.local`).
+- [x] Sincronizar o relógio interno do ESP32 com o servidor NTP (`a.st1.ntp.br` / `pool.ntp.org`) apenas uma vez após a conexão Wi-Fi ser estabelecida
 
-## 4. Módulo de Armazenamento (`StorageManager`)
+## 4. Módulo de Armazenamento (`FileLogger` & `ConfigManager`)
 
 - [x] Inicializar o sistema de arquivos `LittleFS`
 - [x] Criar funções para salvar e ler dados históricos (logs de sensores com timestamp)
@@ -75,7 +75,7 @@
 * [x] **2. Desenvolvimento e Treinamento**
   - [x] Definição da arquitetura da Rede Neural (`PhysMLP-27` 27 -> 32 -> 16 -> 3)
   - [x] Configuração do pipeline de treinamento (`EarlyStopping`, `ReduceLROnPlateau`, pesos calibrados)
-  - [x] Execução do treinamento do modelo (`ai-model/train_tinyml_v2.py`)
+  - [x] Execução do treinamento do modelo (`ai-model/scripts/train_tinyml_v2.py`)
 * [x] **3. Otimização e Validação**
   - [x] Ajuste de hiperparâmetros e benchmark de 10 arquiteturas
   - [x] Avaliação de métricas de performance (Acurácia, Macro-F1, ECE, Matriz de Confusão nos 8 modos)
@@ -90,18 +90,18 @@
   ## Geral
 
 - [x] Documentar API e regras de negócio
-- [] Definir estrutura de _payload_ (JSON)
+- [x] Definir estrutura de _payload_ (JSON)
 - [x] Configurar containerização da aplicação e do banco de dados (Docker)
 
   ## Frontend
 
 - [x] Criação de página de login
 - [x] Criação de página de cadastro de usuário
-- [x] Criação de página de troca de senha
+- [ ] Criação de página de troca de senha (endpoint `PATCH /api/auth/password` pronto no backend)
 - [x] Criação de dashboard para monitoramento de métricas em tempo real e histórico
-- [x] Modularização de componentes e serviços (HTTP)
-- [] Implementação de _guards_ de rota para proteção de telas autenticadas
-- [] Configuração de _interceptors_ para injeção automática do token JWT nas requisições
+- [ ] Modularização de componentes e serviços (HTTP) (atualmente em `web/front/c.js` vanilla)
+- [x] Implementação de validação de sessão (`/api/auth/me`) para proteção da tela autenticada
+- [x] Injeção do token JWT nas requisições autenticadas (`Authorization: Bearer`)
 
   ## Backend (Node.js)
 

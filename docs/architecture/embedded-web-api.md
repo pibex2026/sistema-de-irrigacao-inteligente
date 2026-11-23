@@ -35,13 +35,17 @@
 | Método & Rota | Formato | Descrição |
 | :--- | :---: | :--- |
 | `GET /` | `text/html` (`gzip`) | Serve `/littlefs/index.html.gz` (com fallback HTML mínimo se não montado). |
-| `GET /api/status` | `application/json` | Snapshot atual: sensores, última inferência, atuador e status Wi-Fi/SNTP. |
+| `GET /captive-portal-api` | `application/captive+json` | Resposta RFC 8910 para detecção automática de portal cativo em dispositivos móveis. |
+| `GET /generate_204`, `/gen_204`, `/hotspot-detect.html`, `/connecttest.txt`, `/ncsi.txt`, `/redirect` | `302 Found` | Redirecionamentos de portal cativo para `http://192.168.4.1/`. |
+| `GET /api/status` | `application/json` | Snapshot atual: sensores, última inferência, atuador (incluindo `cooldownRemainingMs`) e status Wi-Fi/SNTP. |
 | `GET /api/performance` | `application/json` | `PerformanceStats` + array `recentInferences` (últimos 15 registros do CSV). |
 | `GET /api/system` | `application/json` | Diagnóstico de placa, clock CPU/XTAL, temperatura, memória Heap e armazenamento Flash/LittleFS. |
 | `GET /api/config` | `application/json` | Configuração atual persistida na NVS (`SystemConfig`). |
-| `POST /api/config` | `application/json` | Atualiza e sanitiza parâmetros de contexto, limiares, calibração e temporização na NVS. |
-| `POST /api/wifi` | `application/json` | Recebe `{"ssid","password"}` e inicia conexão STA assíncrona. |
-| `POST /api/calibrate/dry` | `application/json` | Captura mediana atual do ADC1 e salva como `soilAdcDry` na NVS. |
-| `POST /api/calibrate/wet` | `application/json` | Captura mediana atual do ADC1 e salva como `soilAdcWet` na NVS. |
+| `POST /api/config` | `application/json` | Atualiza e sanitiza parâmetros na NVS (requer header `X-Api-Pin`). |
+| `GET /api/wifi/scan` | `application/json` | Varredura de redes Wi-Fi 2.4 GHz ao alcance (SSID, RSSI, canal e modo de autenticação). |
+| `POST /api/wifi` | `application/json` | Recebe `{"ssid","password"}` e inicia conexão STA assíncrona (requer header `X-Api-Pin`). |
+| `POST /api/calibrate/dry` | `application/json` | Valida e salva mediana atual do ADC1 como `soilAdcDry` na NVS (requer header `X-Api-Pin`). |
+| `POST /api/calibrate/wet` | `application/json` | Valida e salva mediana atual do ADC1 como `soilAdcWet` na NVS (requer header `X-Api-Pin`). |
+| `POST /api/actuator/manual` | `application/json` | Acionamento manual seguro `{"open": true\|false}` respeitando `maxIrrigationMs` e `emergencyStop` (requer header `X-Api-Pin`). |
 | `GET /logs/readings.csv` | `text/csv` | Download por *chunked streaming* (`1024 B`) do histórico de leituras dos sensores. |
 | `GET /logs/inference.csv` | `text/csv` | Download por *chunked streaming* (`1024 B`) do histórico de inferências e acionamentos. |
