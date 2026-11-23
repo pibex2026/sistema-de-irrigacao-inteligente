@@ -37,6 +37,9 @@ void ConfigManager::sanitize(SystemConfig &cfg) {
   cfg.cooldownMs = std::clamp<uint32_t>(cfg.cooldownMs, 10000, 3600000);
   cfg.sensorReadIntervalMs = std::clamp<uint32_t>(cfg.sensorReadIntervalMs, 2500, 300000);
   cfg.logIntervalMs = std::clamp<uint32_t>(cfg.logIntervalMs, 10000, 3600000);
+  cfg.telemetryIntervalMs = std::clamp<uint32_t>(cfg.telemetryIntervalMs, 5000, 3600000);
+  cfg.backendUrl[sizeof(cfg.backendUrl) - 1] = '\0';
+  cfg.deviceApiKey[sizeof(cfg.deviceApiKey) - 1] = '\0';
 }
 
 esp_err_t ConfigManager::init() {

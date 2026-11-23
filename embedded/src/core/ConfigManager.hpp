@@ -20,7 +20,7 @@ public:
 private:
   static constexpr const char *NVS_NAMESPACE = "irrig_cfg";
   static constexpr const char *NVS_KEY_BLOB = "sys_cfg";
-  static constexpr uint32_t SCHEMA_VERSION = 1;
+  static constexpr uint32_t SCHEMA_VERSION = 2;
 
   SystemConfig m_config;
   mutable SemaphoreHandle_t m_mutex = nullptr;

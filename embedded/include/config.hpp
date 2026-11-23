@@ -38,6 +38,7 @@ constexpr uint32_t MAX_IRRIGATION_MS = 120000;    // 2 minutos
 constexpr uint32_t COOLDOWN_MS = 300000;          // 5 minutos
 constexpr uint32_t SENSOR_READ_INTERVAL_MS = 10000; // 10 segundos
 constexpr uint32_t LOG_INTERVAL_MS = 60000;         // 60 segundos
+constexpr uint32_t TELEMETRY_INTERVAL_MS = 15000;   // 15 segundos
 } // namespace Defaults
 
 namespace Network {

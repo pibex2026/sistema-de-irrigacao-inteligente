@@ -10,6 +10,7 @@ idf_component_register(
         "storage/FileLogger.cpp"
         "net/NetworkManager.cpp"
         "net/LocalWebServer.cpp"
+        "net/TelemetryClient.cpp"
     INCLUDE_DIRS
         "../include"
         "core"
@@ -27,6 +28,7 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_http_client
         driver
         json
         esp_system

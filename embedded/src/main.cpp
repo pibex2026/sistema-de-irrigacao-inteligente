@@ -5,6 +5,7 @@
 #include "ModelManager.hpp"
 #include "NetworkManager.hpp"
 #include "SensorsManager.hpp"
+#include "TelemetryClient.hpp"
 #include "TimeUtils.hpp"
 #include "config.hpp"
 #include "esp_log.h"
@@ -23,6 +24,7 @@ static SensorsManager g_sensorsMgr;
 static ModelManager g_modelMgr;
 static NetworkManager g_networkMgr;
 static LocalWebServer g_webServer(g_configMgr, g_fileLogger, g_networkMgr, g_sensorsMgr);
+static TelemetryClient g_telemetryClient(g_configMgr, g_networkMgr, g_webServer);
 
 static void controlTask(void *) {
   esp_task_wdt_add(nullptr);
@@ -32,7 +34,8 @@ static void controlTask(void *) {
   InferenceResult lastInference{};
 
   int64_t lastReadMs = -1000000;
-  int64_t lastLogMs = -1000000;
+  int64_t lastReadingsLogMs = -1000000;
+  int64_t lastInferenceLogMs = -1000000;
   uint8_t consecutiveSensorErrors = 0;
   bool modelReady = false;
   bool prevValveOpen = false;
@@ -88,7 +91,8 @@ static void controlTask(void *) {
         }
 
         consecutiveSensorErrors = 0;
-        if ((nowMs - lastLogMs) >= static_cast<int64_t>(cfg.logIntervalMs)) {
+        if ((nowMs - lastReadingsLogMs) >= static_cast<int64_t>(cfg.logIntervalMs)) {
+          lastReadingsLogMs = nowMs;
           g_fileLogger.logSensorData(lastSensorData);
         }
         currentState = SystemState::RUN_INFERENCE;
@@ -140,9 +144,9 @@ static void controlTask(void *) {
       g_actuatorMgr.applyDecision(lastInference, cfg);
       const ActuatorStatus actSt = g_actuatorMgr.getStatus();
 
-      if ((nowMs - lastLogMs) >= static_cast<int64_t>(cfg.logIntervalMs) ||
+      if ((nowMs - lastInferenceLogMs) >= static_cast<int64_t>(cfg.logIntervalMs) ||
           lastInference.thermalStressAlert) {
-        lastLogMs = nowMs;
+        lastInferenceLogMs = nowMs;
         InferenceLogEntry entry{};
         entry.sensors = lastSensorData;
         entry.context.soilType = cfg.soilType;
@@ -215,6 +219,10 @@ extern "C" void app_main(void) {
 
   if (g_webServer.start() != ESP_OK) {
     ESP_LOGW(TAG, "Falha ao iniciar servidor HTTP local.");
+  }
+
+  if (g_telemetryClient.start() != ESP_OK) {
+    ESP_LOGW(TAG, "Falha ao iniciar cliente de telemetria.");
   }
 
   // Task de controle, IA e atuacao fixada no Core 1 (APP_CPU)

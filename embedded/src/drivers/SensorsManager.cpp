@@ -11,7 +11,9 @@
 
 static const char *TAG = "SensorsManager";
 
-SensorsManager::SensorsManager() : m_dht(Config::Pins::DHT_SENSOR_PIN) {}
+SensorsManager::SensorsManager() : m_dht(Config::Pins::DHT_SENSOR_PIN) {
+  m_adcMutex = xSemaphoreCreateMutex();
+}
 
 SensorsManager::~SensorsManager() {
   if (m_hasCali && m_adcCaliHandle != nullptr) {
@@ -21,6 +23,10 @@ SensorsManager::~SensorsManager() {
   if (m_adcHandle != nullptr) {
     adc_oneshot_del_unit(m_adcHandle);
     m_adcHandle = nullptr;
+  }
+  if (m_adcMutex != nullptr) {
+    vSemaphoreDelete(m_adcMutex);
+    m_adcMutex = nullptr;
   }
 }
 
@@ -65,8 +71,9 @@ esp_err_t SensorsManager::init() {
 }
 
 uint16_t SensorsManager::readSoilAdcMedian() {
-  if (!m_initialized || m_adcHandle == nullptr) return 0;
+  if (!m_initialized || m_adcHandle == nullptr || m_adcMutex == nullptr) return 0;
 
+  xSemaphoreTake(m_adcMutex, portMAX_DELAY);
   std::array<int, Config::Hardware::SOIL_ADC_SAMPLES> samples{};
   for (size_t i = 0; i < samples.size(); ++i) {
     int raw = 0;
@@ -76,6 +83,7 @@ uint16_t SensorsManager::readSoilAdcMedian() {
     samples[i] = std::clamp(raw, 0, 4095);
     vTaskDelay(pdMS_TO_TICKS(2));
   }
+  xSemaphoreGive(m_adcMutex);
 
   std::sort(samples.begin(), samples.end());
   return static_cast<uint16_t>(samples[samples.size() / 2]);

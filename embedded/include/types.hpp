@@ -19,7 +19,7 @@ enum class IrrigationDecision : uint8_t {
 };
 
 struct SystemConfig {
-  uint32_t schemaVersion = 1;
+  uint32_t schemaVersion = 2;
   uint8_t soilType = Config::Defaults::SOIL_TYPE;
   uint8_t cropId = Config::Defaults::CROP_ID;
   uint8_t seedlingStage = Config::Defaults::SEEDLING_STAGE;
@@ -31,6 +31,9 @@ struct SystemConfig {
   uint32_t cooldownMs = Config::Defaults::COOLDOWN_MS;
   uint32_t sensorReadIntervalMs = Config::Defaults::SENSOR_READ_INTERVAL_MS;
   uint32_t logIntervalMs = Config::Defaults::LOG_INTERVAL_MS;
+  uint32_t telemetryIntervalMs = Config::Defaults::TELEMETRY_INTERVAL_MS;
+  char backendUrl[128] = "";
+  char deviceApiKey[64] = "";
 };
 
 struct SensorData {

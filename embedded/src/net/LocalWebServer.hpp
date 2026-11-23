@@ -39,6 +39,9 @@ private:
   static esp_err_t handleDownloadReadings(httpd_req_t *req);
   static esp_err_t handleDownloadInference(httpd_req_t *req);
 
+  esp_err_t readRequestBody(httpd_req_t *req, char *buf, size_t bufSize, size_t maxLen) const;
+  bool readFileChunk(const char *path, long offset, char *buf, size_t bufSize,
+                     size_t &bytesRead, bool &exists) const;
   esp_err_t streamCsvFile(httpd_req_t *req, const char *path, const char *downloadName) const;
 
   ConfigManager &m_cfgMgr;

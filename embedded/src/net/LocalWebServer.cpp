@@ -11,6 +11,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_wifi_types.h"
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -104,36 +105,79 @@ void LocalWebServer::stop() {
   }
 }
 
+bool LocalWebServer::readFileChunk(const char *path, long offset, char *buf, size_t bufSize,
+                                   size_t &bytesRead, bool &exists) const {
+  bytesRead = 0;
+  exists = false;
+  if (!m_logger.isMounted() || m_logger.getMutex() == nullptr) {
+    return false;
+  }
+
+  xSemaphoreTake(m_logger.getMutex(), portMAX_DELAY);
+  FILE *f = std::fopen(path, "rb");
+  if (f != nullptr) {
+    exists = true;
+    if (offset == 0 || std::fseek(f, offset, SEEK_SET) == 0) {
+      bytesRead = std::fread(buf, 1, bufSize, f);
+    }
+    std::fclose(f);
+  }
+  xSemaphoreGive(m_logger.getMutex());
+  return exists;
+}
+
+esp_err_t LocalWebServer::readRequestBody(httpd_req_t *req, char *buf, size_t bufSize,
+                                          size_t maxLen) const {
+  if (req->content_len <= 0 || static_cast<size_t>(req->content_len) > maxLen ||
+      static_cast<size_t>(req->content_len) >= bufSize) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Payload invalido");
+    return ESP_FAIL;
+  }
+
+  size_t totalReceived = 0;
+  const size_t targetLen = static_cast<size_t>(req->content_len);
+  while (totalReceived < targetLen) {
+    const int ret = httpd_req_recv(req, buf + totalReceived, targetLen - totalReceived);
+    if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+      continue;
+    }
+    if (ret <= 0) {
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Erro ao ler body");
+      return ESP_FAIL;
+    }
+    totalReceived += static_cast<size_t>(ret);
+  }
+  buf[totalReceived] = '\0';
+  return ESP_OK;
+}
+
 esp_err_t LocalWebServer::handleRoot(httpd_req_t *req) {
   ESP_LOGI(TAG, "HTTP GET %s (handleRoot)", req->uri);
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
-  FILE *f = nullptr;
   if (self->m_logger.isMounted()) {
-    xSemaphoreTake(self->m_logger.getMutex(), portMAX_DELAY);
-    f = std::fopen(Config::Storage::WEB_INDEX_GZ_PATH, "rb");
-    if (f != nullptr) {
+    char buf[1024];
+    size_t n = 0;
+    bool exists = false;
+    long offset = 0;
+
+    if (self->readFileChunk(Config::Storage::WEB_INDEX_GZ_PATH, 0, buf, sizeof(buf), n, exists) && exists) {
       httpd_resp_set_type(req, "text/html");
       httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-      char buf[1024];
-      size_t n = 0;
-      size_t totalSent = 0;
-      while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+      while (n > 0) {
         if (httpd_resp_send_chunk(req, buf, static_cast<ssize_t>(n)) != ESP_OK) {
-          ESP_LOGW(TAG, "Erro ao enviar chunk de index.html.gz (enviados %zu B)", totalSent);
-          std::fclose(f);
-          xSemaphoreGive(self->m_logger.getMutex());
+          ESP_LOGW(TAG, "Erro ao enviar chunk de index.html.gz (enviados %ld B)", offset);
           httpd_resp_send_chunk(req, nullptr, 0);
           return ESP_FAIL;
         }
-        totalSent += n;
+        offset += static_cast<long>(n);
+        if (!self->readFileChunk(Config::Storage::WEB_INDEX_GZ_PATH, offset, buf, sizeof(buf), n, exists)) {
+          break;
+        }
       }
-      std::fclose(f);
-      xSemaphoreGive(self->m_logger.getMutex());
       httpd_resp_send_chunk(req, nullptr, 0);
-      ESP_LOGI(TAG, "index.html.gz enviado (%zu bytes).", totalSent);
+      ESP_LOGI(TAG, "index.html.gz enviado (%ld bytes).", offset);
       return ESP_OK;
     }
-    xSemaphoreGive(self->m_logger.getMutex());
     ESP_LOGW(TAG, "index.html.gz nao encontrado em %s; usando fallback.", Config::Storage::WEB_INDEX_GZ_PATH);
   }
 
@@ -392,6 +436,9 @@ esp_err_t LocalWebServer::handleGetConfig(httpd_req_t *req) {
   cJSON_AddNumberToObject(root, "cooldownMs", cfg.cooldownMs);
   cJSON_AddNumberToObject(root, "sensorReadIntervalMs", cfg.sensorReadIntervalMs);
   cJSON_AddNumberToObject(root, "logIntervalMs", cfg.logIntervalMs);
+  cJSON_AddNumberToObject(root, "telemetryIntervalMs", cfg.telemetryIntervalMs);
+  cJSON_AddStringToObject(root, "backendUrl", cfg.backendUrl);
+  cJSON_AddBoolToObject(root, "hasDeviceApiKey", cfg.deviceApiKey[0] != '\0');
 
   char *jsonStr = cJSON_PrintUnformatted(root);
   cJSON_Delete(root);
@@ -403,15 +450,8 @@ esp_err_t LocalWebServer::handleGetConfig(httpd_req_t *req) {
 
 esp_err_t LocalWebServer::handlePostConfig(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
-  if (req->content_len <= 0 || req->content_len > 1024) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Payload invalido");
-    return ESP_FAIL;
-  }
-
   char buf[1025] = {};
-  const int received = httpd_req_recv(req, buf, req->content_len);
-  if (received <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Erro ao ler body");
+  if (self->readRequestBody(req, buf, sizeof(buf), 1024) != ESP_OK) {
     return ESP_FAIL;
   }
 
@@ -433,6 +473,13 @@ esp_err_t LocalWebServer::handlePostConfig(httpd_req_t *req) {
   if (cJSON *v = cJSON_GetObjectItem(root, "cooldownMs"); cJSON_IsNumber(v)) cfg.cooldownMs = static_cast<uint32_t>(v->valuedouble);
   if (cJSON *v = cJSON_GetObjectItem(root, "sensorReadIntervalMs"); cJSON_IsNumber(v)) cfg.sensorReadIntervalMs = static_cast<uint32_t>(v->valuedouble);
   if (cJSON *v = cJSON_GetObjectItem(root, "logIntervalMs"); cJSON_IsNumber(v)) cfg.logIntervalMs = static_cast<uint32_t>(v->valuedouble);
+  if (cJSON *v = cJSON_GetObjectItem(root, "telemetryIntervalMs"); cJSON_IsNumber(v)) cfg.telemetryIntervalMs = static_cast<uint32_t>(v->valuedouble);
+  if (cJSON *v = cJSON_GetObjectItem(root, "backendUrl"); cJSON_IsString(v)) {
+    std::snprintf(cfg.backendUrl, sizeof(cfg.backendUrl), "%s", v->valuestring);
+  }
+  if (cJSON *v = cJSON_GetObjectItem(root, "deviceApiKey"); cJSON_IsString(v) && std::strlen(v->valuestring) > 0) {
+    std::snprintf(cfg.deviceApiKey, sizeof(cfg.deviceApiKey), "%s", v->valuestring);
+  }
 
   cJSON_Delete(root);
   self->m_cfgMgr.update(cfg);
@@ -484,14 +531,8 @@ esp_err_t LocalWebServer::handleGetWifiScan(httpd_req_t *req) {
 
 esp_err_t LocalWebServer::handlePostWifi(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
-  if (req->content_len <= 0 || req->content_len > 256) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Payload invalido");
-    return ESP_FAIL;
-  }
-
   char buf[257] = {};
-  if (httpd_req_recv(req, buf, req->content_len) <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Erro ao ler body");
+  if (self->readRequestBody(req, buf, sizeof(buf), 256) != ESP_OK) {
     return ESP_FAIL;
   }
 
@@ -520,12 +561,39 @@ esp_err_t LocalWebServer::handlePostWifi(httpd_req_t *req) {
   return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
+static bool isValidCalibrationReading(uint16_t raw, uint16_t otherPoint, const char **errMsg) {
+  if (raw <= Config::Hardware::SOIL_ADC_FAULT_LOW ||
+      raw >= Config::Hardware::SOIL_ADC_FAULT_HIGH) {
+    *errMsg = "Leitura ADC fora da faixa valida (possivel falha eletrica no sensor).";
+    return false;
+  }
+  if (std::abs(static_cast<int>(raw) - static_cast<int>(otherPoint)) < 100) {
+    *errMsg = "Valor calibrado muito proximo do ponto oposto (diferenca minima de 100 ADC).";
+    return false;
+  }
+  return true;
+}
+
 esp_err_t LocalWebServer::handleCalibrateDry(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
   const uint16_t raw = self->m_sensorsMgr.readSoilAdcMedian();
   SystemConfig cfg = self->m_cfgMgr.get();
+
+  const char *errMsg = nullptr;
+  if (!isValidCalibrationReading(raw, cfg.soilAdcWet, &errMsg)) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_type(req, "application/json");
+    char errResp[160];
+    std::snprintf(errResp, sizeof(errResp), "{\"ok\":false,\"raw\":%u,\"error\":\"%s\"}", raw, errMsg);
+    return httpd_resp_sendstr(req, errResp);
+  }
+
   cfg.soilAdcDry = raw;
-  self->m_cfgMgr.update(cfg);
+  if (self->m_cfgMgr.update(cfg) != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Falha ao salvar na NVS.\"}");
+  }
 
   char resp[64];
   std::snprintf(resp, sizeof(resp), "{\"ok\":true,\"soilAdcDry\":%u}", raw);
@@ -537,8 +605,22 @@ esp_err_t LocalWebServer::handleCalibrateWet(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
   const uint16_t raw = self->m_sensorsMgr.readSoilAdcMedian();
   SystemConfig cfg = self->m_cfgMgr.get();
+
+  const char *errMsg = nullptr;
+  if (!isValidCalibrationReading(raw, cfg.soilAdcDry, &errMsg)) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_type(req, "application/json");
+    char errResp[160];
+    std::snprintf(errResp, sizeof(errResp), "{\"ok\":false,\"raw\":%u,\"error\":\"%s\"}", raw, errMsg);
+    return httpd_resp_sendstr(req, errResp);
+  }
+
   cfg.soilAdcWet = raw;
-  self->m_cfgMgr.update(cfg);
+  if (self->m_cfgMgr.update(cfg) != ESP_OK) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Falha ao salvar na NVS.\"}");
+  }
 
   char resp[64];
   std::snprintf(resp, sizeof(resp), "{\"ok\":true,\"soilAdcWet\":%u}", raw);
@@ -552,10 +634,10 @@ esp_err_t LocalWebServer::streamCsvFile(httpd_req_t *req, const char *path, cons
     return ESP_FAIL;
   }
 
-  xSemaphoreTake(m_logger.getMutex(), portMAX_DELAY);
-  FILE *f = std::fopen(path, "r");
-  if (f == nullptr) {
-    xSemaphoreGive(m_logger.getMutex());
+  char buf[1024];
+  size_t n = 0;
+  bool exists = false;
+  if (!readFileChunk(path, 0, buf, sizeof(buf), n, exists) || !exists) {
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Arquivo nao encontrado");
     return ESP_FAIL;
   }
@@ -565,18 +647,17 @@ esp_err_t LocalWebServer::streamCsvFile(httpd_req_t *req, const char *path, cons
   httpd_resp_set_type(req, "text/csv");
   httpd_resp_set_hdr(req, "Content-Disposition", disp);
 
-  char buf[1024];
-  size_t n = 0;
-  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+  long offset = 0;
+  while (n > 0) {
     if (httpd_resp_send_chunk(req, buf, static_cast<ssize_t>(n)) != ESP_OK) {
-      std::fclose(f);
-      xSemaphoreGive(m_logger.getMutex());
       httpd_resp_send_chunk(req, nullptr, 0);
       return ESP_FAIL;
     }
+    offset += static_cast<long>(n);
+    if (!readFileChunk(path, offset, buf, sizeof(buf), n, exists)) {
+      break;
+    }
   }
-  std::fclose(f);
-  xSemaphoreGive(m_logger.getMutex());
   httpd_resp_send_chunk(req, nullptr, 0);
   return ESP_OK;
 }
