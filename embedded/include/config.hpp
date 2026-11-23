@@ -43,7 +43,8 @@ constexpr uint32_t TELEMETRY_INTERVAL_MS = 15000;   // 15 segundos
 
 namespace Network {
 constexpr const char *DEFAULT_AP_SSID = "ESP-Irrigacao";
-constexpr const char *DEFAULT_AP_PASS = ""; // Vazia = AP aberto
+constexpr const char *DEFAULT_AP_PASS = "irrigacao2026"; // WPA2 (>= 8 chars)
+constexpr const char *DEFAULT_LOCAL_API_PIN = "pibex2026";
 constexpr const char *DEFAULT_MDNS_HOST = "irrigacao";
 constexpr uint32_t PORTAL_TIMEOUT_S = 240;
 constexpr const char *NTP_SERVER_PRIMARY = "a.st1.ntp.br";

@@ -18,8 +18,10 @@
 static const char *TAG = "LocalWebServer";
 
 LocalWebServer::LocalWebServer(ConfigManager &cfgMgr, FileLogger &logger,
-                               NetworkManager &netMgr, SensorsManager &sensorsMgr)
-    : m_cfgMgr(cfgMgr), m_logger(logger), m_netMgr(netMgr), m_sensorsMgr(sensorsMgr) {
+                               NetworkManager &netMgr, SensorsManager &sensorsMgr,
+                               ActuatorManager &actuatorMgr)
+    : m_cfgMgr(cfgMgr), m_logger(logger), m_netMgr(netMgr), m_sensorsMgr(sensorsMgr),
+      m_actuatorMgr(actuatorMgr) {
   m_snapMutex = xSemaphoreCreateMutex();
 }
 
@@ -50,8 +52,8 @@ SystemSnapshot LocalWebServer::getSnapshot() const {
 esp_err_t LocalWebServer::start() {
   if (m_server != nullptr) return ESP_OK;
 
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.max_uri_handlers = 22;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.max_uri_handlers = 26;
   config.max_open_sockets = 11;
   config.stack_size = 6144;
   config.lru_purge_enable = true;
@@ -82,6 +84,7 @@ esp_err_t LocalWebServer::start() {
       {"/api/wifi", HTTP_POST, handlePostWifi, this},
       {"/api/calibrate/dry", HTTP_POST, handleCalibrateDry, this},
       {"/api/calibrate/wet", HTTP_POST, handleCalibrateWet, this},
+      {"/api/actuator/manual", HTTP_POST, handlePostActuatorManual, this},
       {"/logs/readings.csv", HTTP_GET, handleDownloadReadings, this},
       {"/logs/inference.csv", HTTP_GET, handleDownloadInference, this},
   };
@@ -265,6 +268,7 @@ esp_err_t LocalWebServer::handleGetStatus(httpd_req_t *req) {
   cJSON_AddBoolToObject(act, "inCooldown", snap.actuator.inCooldown);
   cJSON_AddBoolToObject(act, "emergencyStopped", snap.actuator.emergencyStopped);
   cJSON_AddNumberToObject(act, "openElapsedMs", snap.actuator.openElapsedMs);
+  cJSON_AddNumberToObject(act, "cooldownRemainingMs", snap.actuator.cooldownRemainingMs);
 
   cJSON *netObj = cJSON_AddObjectToObject(root, "network");
   cJSON_AddBoolToObject(netObj, "staConnected", net.staConnected);
@@ -448,8 +452,28 @@ esp_err_t LocalWebServer::handleGetConfig(httpd_req_t *req) {
   return res;
 }
 
+bool LocalWebServer::requireLocalAuth(httpd_req_t *req) const {
+  const size_t pinLen = httpd_req_get_hdr_value_len(req, "X-Api-Pin");
+  if (pinLen == 0 || pinLen >= 64) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Cabecalho X-Api-Pin ausente ou invalido.\"}");
+    return false;
+  }
+  char pinBuf[64] = {};
+  if (httpd_req_get_hdr_value_str(req, "X-Api-Pin", pinBuf, sizeof(pinBuf)) != ESP_OK ||
+      std::strcmp(pinBuf, Config::Network::DEFAULT_LOCAL_API_PIN) != 0) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"PIN de acesso local incorreto.\"}");
+    return false;
+  }
+  return true;
+}
+
 esp_err_t LocalWebServer::handlePostConfig(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  if (!self->requireLocalAuth(req)) return ESP_FAIL;
   char buf[1025] = {};
   if (self->readRequestBody(req, buf, sizeof(buf), 1024) != ESP_OK) {
     return ESP_FAIL;
@@ -531,6 +555,7 @@ esp_err_t LocalWebServer::handleGetWifiScan(httpd_req_t *req) {
 
 esp_err_t LocalWebServer::handlePostWifi(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  if (!self->requireLocalAuth(req)) return ESP_FAIL;
   char buf[257] = {};
   if (self->readRequestBody(req, buf, sizeof(buf), 256) != ESP_OK) {
     return ESP_FAIL;
@@ -576,6 +601,7 @@ static bool isValidCalibrationReading(uint16_t raw, uint16_t otherPoint, const c
 
 esp_err_t LocalWebServer::handleCalibrateDry(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  if (!self->requireLocalAuth(req)) return ESP_FAIL;
   const uint16_t raw = self->m_sensorsMgr.readSoilAdcMedian();
   SystemConfig cfg = self->m_cfgMgr.get();
 
@@ -603,6 +629,7 @@ esp_err_t LocalWebServer::handleCalibrateDry(httpd_req_t *req) {
 
 esp_err_t LocalWebServer::handleCalibrateWet(httpd_req_t *req) {
   auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  if (!self->requireLocalAuth(req)) return ESP_FAIL;
   const uint16_t raw = self->m_sensorsMgr.readSoilAdcMedian();
   SystemConfig cfg = self->m_cfgMgr.get();
 
@@ -626,6 +653,41 @@ esp_err_t LocalWebServer::handleCalibrateWet(httpd_req_t *req) {
   std::snprintf(resp, sizeof(resp), "{\"ok\":true,\"soilAdcWet\":%u}", raw);
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_sendstr(req, resp);
+}
+
+esp_err_t LocalWebServer::handlePostActuatorManual(httpd_req_t *req) {
+  auto *self = static_cast<LocalWebServer *>(req->user_ctx);
+  if (!self->requireLocalAuth(req)) return ESP_FAIL;
+
+  char buf[129] = {};
+  if (self->readRequestBody(req, buf, sizeof(buf), 128) != ESP_OK) {
+    return ESP_FAIL;
+  }
+
+  cJSON *root = cJSON_Parse(buf);
+  if (root == nullptr) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON invalido");
+    return ESP_FAIL;
+  }
+
+  cJSON *openItem = cJSON_GetObjectItem(root, "open");
+  if (!cJSON_IsBool(openItem)) {
+    cJSON_Delete(root);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Campo booleano 'open' obrigatorio");
+    return ESP_FAIL;
+  }
+  const bool open = cJSON_IsTrue(openItem);
+  cJSON_Delete(root);
+
+  const SystemConfig cfg = self->m_cfgMgr.get();
+  if (!self->m_actuatorMgr.manualOverride(open, cfg)) {
+    httpd_resp_set_status(req, "409 Conflict");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"Acionamento recusado (EMERGENCY STOP ativo).\"}");
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_sendstr(req, open ? "{\"ok\":true,\"valveOpen\":true}" : "{\"ok\":true,\"valveOpen\":false}");
 }
 
 esp_err_t LocalWebServer::streamCsvFile(httpd_req_t *req, const char *path, const char *downloadName) const {

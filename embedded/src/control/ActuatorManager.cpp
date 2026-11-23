@@ -6,6 +6,17 @@
 
 static const char *TAG = "ActuatorManager";
 
+ActuatorManager::ActuatorManager() {
+  m_mutex = xSemaphoreCreateMutex();
+}
+
+ActuatorManager::~ActuatorManager() {
+  if (m_mutex != nullptr) {
+    vSemaphoreDelete(m_mutex);
+    m_mutex = nullptr;
+  }
+}
+
 esp_err_t ActuatorManager::init() {
   // Define o nivel de repouso ANTES de habilitar saida para evitar pulso no boot
   const int idleLevel = Config::Hardware::RELAY_ACTIVE_LOW ? 1 : 0;
@@ -60,9 +71,11 @@ void ActuatorManager::setLedPhysical(bool on) {
 }
 
 void ActuatorManager::applyDecision(const InferenceResult &result, const SystemConfig &cfg) {
-  if (!m_initialized) return;
+  if (!m_initialized || m_mutex == nullptr) return;
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
 
   if (!result.valid) {
+    xSemaphoreGive(m_mutex);
     emergencyStop();
     return;
   }
@@ -78,10 +91,12 @@ void ActuatorManager::applyDecision(const InferenceResult &result, const SystemC
       setValvePhysical(false);
       m_inCooldown = true;
       m_cooldownStartedAtMs = nowMs;
+      m_activeCooldownMs = cfg.cooldownMs;
       ESP_LOGI(TAG, "Valvula FECHADA (%s). Cooldown iniciado (%lu ms).",
                result.thermalStressAlert ? "ESTRESSE TERMICO" : "OFF",
                static_cast<unsigned long>(cfg.cooldownMs));
     }
+    xSemaphoreGive(m_mutex);
     return;
   }
 
@@ -90,12 +105,14 @@ void ActuatorManager::applyDecision(const InferenceResult &result, const SystemC
     if ((nowMs - m_cooldownStartedAtMs) < static_cast<int64_t>(cfg.cooldownMs)) {
       ESP_LOGI(TAG, "Irrigacao solicitada, mas em cooldown (%lld ms restantes).",
                static_cast<long long>(cfg.cooldownMs - (nowMs - m_cooldownStartedAtMs)));
+      xSemaphoreGive(m_mutex);
       return;
     }
     m_inCooldown = false;
   }
 
   if (m_valveOpen) {
+    xSemaphoreGive(m_mutex);
     return; // Ja aberta; timeout eh monitorado em update()
   }
 
@@ -114,36 +131,76 @@ void ActuatorManager::applyDecision(const InferenceResult &result, const SystemC
              m_consecutiveIrrigateCount,
              Config::Hardware::CONSECUTIVE_IRRIGATE_CONFIRMATIONS);
   }
+  xSemaphoreGive(m_mutex);
 }
 
 void ActuatorManager::update(const SystemConfig &cfg) {
-  if (!m_initialized) return;
+  if (!m_initialized || m_mutex == nullptr) return;
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
   const int64_t nowMs = TimeUtils::getMillis();
 
   if (m_valveOpen && (nowMs - m_valveOpenedAtMs) >= static_cast<int64_t>(cfg.maxIrrigationMs)) {
     setValvePhysical(false);
     m_inCooldown = true;
     m_cooldownStartedAtMs = nowMs;
+    m_activeCooldownMs = cfg.cooldownMs;
     m_consecutiveIrrigateCount = 0;
     ESP_LOGW(TAG, "TIMEOUT hidraulico atingido (%lu ms). Valvula FECHADA e cooldown iniciado.",
              static_cast<unsigned long>(cfg.maxIrrigationMs));
   }
 
-  if (m_inCooldown && (nowMs - m_cooldownStartedAtMs) >= static_cast<int64_t>(cfg.cooldownMs)) {
+  if (m_inCooldown && (nowMs - m_cooldownStartedAtMs) >= static_cast<int64_t>(m_activeCooldownMs)) {
     m_inCooldown = false;
     ESP_LOGI(TAG, "Cooldown concluido.");
   }
 
   updateStatusLed(nowMs);
+  xSemaphoreGive(m_mutex);
+}
+
+bool ActuatorManager::manualOverride(bool open, const SystemConfig &cfg) {
+  if (!m_initialized || m_mutex == nullptr) return false;
+  xSemaphoreTake(m_mutex, portMAX_DELAY);
+
+  if (m_emergencyStopped) {
+    xSemaphoreGive(m_mutex);
+    ESP_LOGW(TAG, "Override manual recusado: sistema em EMERGENCY STOP.");
+    return false;
+  }
+
+  const int64_t nowMs = TimeUtils::getMillis();
+  if (open) {
+    m_inCooldown = false;
+    setValvePhysical(true);
+    m_valveOpenedAtMs = nowMs;
+    m_consecutiveIrrigateCount = 0;
+    ESP_LOGI(TAG, "Override manual: valvula ABERTA (timeout=%lu ms).",
+             static_cast<unsigned long>(cfg.maxIrrigationMs));
+  } else {
+    if (m_valveOpen) {
+      setValvePhysical(false);
+      m_inCooldown = true;
+      m_cooldownStartedAtMs = nowMs;
+      m_activeCooldownMs = cfg.cooldownMs;
+      ESP_LOGI(TAG, "Override manual: valvula FECHADA (cooldown=%lu ms).",
+               static_cast<unsigned long>(cfg.cooldownMs));
+    }
+    m_consecutiveIrrigateCount = 0;
+  }
+
+  xSemaphoreGive(m_mutex);
+  return true;
 }
 
 void ActuatorManager::emergencyStop() {
+  if (m_mutex != nullptr) xSemaphoreTake(m_mutex, portMAX_DELAY);
   if (m_valveOpen) {
     ESP_LOGE(TAG, "EMERGENCY STOP: fechando valvula imediatamente!");
   }
   setValvePhysical(false);
   m_consecutiveIrrigateCount = 0;
   m_emergencyStopped = true;
+  if (m_mutex != nullptr) xSemaphoreGive(m_mutex);
 }
 
 void ActuatorManager::updateStatusLed(int64_t nowMs) {
@@ -181,6 +238,7 @@ void ActuatorManager::updateStatusLed(int64_t nowMs) {
 
 ActuatorStatus ActuatorManager::getStatus() const {
   ActuatorStatus st{};
+  if (m_mutex != nullptr) xSemaphoreTake(m_mutex, portMAX_DELAY);
   const int64_t nowMs = TimeUtils::getMillis();
   st.valveOpen = m_valveOpen;
   st.inCooldown = m_inCooldown;
@@ -191,8 +249,9 @@ ActuatorStatus ActuatorManager::getStatus() const {
     st.openElapsedMs = static_cast<uint32_t>(nowMs - m_valveOpenedAtMs);
   }
   if (m_inCooldown && nowMs >= m_cooldownStartedAtMs) {
-    const int64_t rem = static_cast<int64_t>(Config::Defaults::COOLDOWN_MS) - (nowMs - m_cooldownStartedAtMs);
+    const int64_t rem = static_cast<int64_t>(m_activeCooldownMs) - (nowMs - m_cooldownStartedAtMs);
     st.cooldownRemainingMs = rem > 0 ? static_cast<uint32_t>(rem) : 0;
   }
+  if (m_mutex != nullptr) xSemaphoreGive(m_mutex);
   return st;
 }

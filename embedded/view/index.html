@@ -77,6 +77,11 @@
           Latencia: <strong id="lat">--</strong> us |
           Heap livre: <strong id="heap">--</strong> B
         </div>
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn-pri" onclick="manualValve(true)">Abrir Valvula (Manual)</button>
+          <button class="sec" onclick="manualValve(false)">Fechar Valvula (Manual)</button>
+          <span class="sub" id="valveMsg" style="align-self:center;"></span>
+        </div>
       </div>
 
       <div class="card">
@@ -123,15 +128,19 @@
         </div>
         <div class="row">
           <div><label>Limiar Confianca (0.30-0.95)</label><input id="confTh" type="number" step="0.05"></div>
+          <div><label>Limiar Estresse Termico (0.25-0.85)</label><input id="stressTh" type="number" step="0.05"></div>
           <div><label>Timeout Valvula (ms)</label><input id="maxIrr" type="number" step="1000"></div>
           <div><label>Cooldown (ms)</label><input id="cooldown" type="number" step="5000"></div>
           <div><label>Intervalo Leitura (ms)</label><input id="readInt" type="number" step="1000"></div>
+          <div><label>Intervalo Log CSV (ms)</label><input id="logInt" type="number" step="5000"></div>
+          <div><label>PIN Acesso Local (POST)</label><input id="apiPin" type="password" placeholder="PIN (padrao: pibex2026)"></div>
         </div>
         <div class="actions">
           <button class="btn-pri" onclick="saveConfig()">Salvar Configuracao</button>
           <button class="sec" onclick="calibrate('dry')">Calibrar Solo SECO (ADC atual)</button>
           <button class="sec" onclick="calibrate('wet')">Calibrar Solo UMIDO (ADC atual)</button>
         </div>
+        <div class="sub" id="cfgFeedback" style="margin-top:8px;"></div>
       </div>
 
       <div class="card">
@@ -338,6 +347,22 @@
       } catch (e) {}
     }
 
+    function getApiHeaders(json = true) {
+      const pinEl = document.getElementById('apiPin');
+      const pin = (pinEl && pinEl.value) ? pinEl.value : (localStorage.getItem('esp_api_pin') || 'pibex2026');
+      if (pinEl && pinEl.value) localStorage.setItem('esp_api_pin', pinEl.value);
+      const h = { 'X-Api-Pin': pin };
+      if (json) h['Content-Type'] = 'application/json';
+      return h;
+    }
+
+    function setFeedback(elId, msg, isErr = false) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.textContent = msg;
+      el.style.color = isErr ? 'var(--err)' : 'var(--ok)';
+    }
+
     async function loadConfig() {
       const r = await fetch('/api/config');
       const c = await r.json();
@@ -345,9 +370,13 @@
       document.getElementById('cropId').value = c.cropId;
       document.getElementById('seedlingStage').value = c.seedlingStage;
       document.getElementById('confTh').value = c.confidenceThreshold;
+      document.getElementById('stressTh').value = c.thermalStressThreshold;
       document.getElementById('maxIrr').value = c.maxIrrigationMs;
       document.getElementById('cooldown').value = c.cooldownMs;
       document.getElementById('readInt').value = c.sensorReadIntervalMs;
+      document.getElementById('logInt').value = c.logIntervalMs;
+      const savedPin = localStorage.getItem('esp_api_pin');
+      if (savedPin) document.getElementById('apiPin').value = savedPin;
     }
 
     async function saveConfig() {
@@ -356,28 +385,66 @@
         cropId: +document.getElementById('cropId').value,
         seedlingStage: +document.getElementById('seedlingStage').value,
         confidenceThreshold: +document.getElementById('confTh').value,
+        thermalStressThreshold: +document.getElementById('stressTh').value,
         maxIrrigationMs: +document.getElementById('maxIrr').value,
         cooldownMs: +document.getElementById('cooldown').value,
-        sensorReadIntervalMs: +document.getElementById('readInt').value
+        sensorReadIntervalMs: +document.getElementById('readInt').value,
+        logIntervalMs: +document.getElementById('logInt').value
       };
-      await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-      alert('Configuracao salva na NVS!');
+      try {
+        const r = await fetch('/api/config', { method:'POST', headers: getApiHeaders(true), body: JSON.stringify(body) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.ok === false) {
+          setFeedback('cfgFeedback', d.error || `Erro HTTP ${r.status} ao salvar configuracao.`, true);
+          return;
+        }
+        await loadConfig();
+        setFeedback('cfgFeedback', 'Configuracao salva e recarregada da NVS!');
+      } catch (e) {
+        setFeedback('cfgFeedback', 'Falha de rede ao salvar configuracao.', true);
+      }
     }
 
     async function calibrate(mode) {
-      const r = await fetch('/api/calibrate/' + mode, { method:'POST' });
-      const res = await r.json();
-      alert('Calibracao salva: ' + JSON.stringify(res));
+      try {
+        const r = await fetch('/api/calibrate/' + mode, { method:'POST', headers: getApiHeaders(false) });
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok || !res.ok) {
+          setFeedback('cfgFeedback', res.error || `Falha na calibracao (HTTP ${r.status}).`, true);
+          return;
+        }
+        setFeedback('cfgFeedback', `Calibracao (${mode}) salva: ${JSON.stringify(res)}`);
+      } catch (e) {
+        setFeedback('cfgFeedback', 'Falha de rede ao calibrar sensor.', true);
+      }
+    }
+
+    async function manualValve(open) {
+      try {
+        const r = await fetch('/api/actuator/manual', {
+          method: 'POST',
+          headers: getApiHeaders(true),
+          body: JSON.stringify({ open })
+        });
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok || !res.ok) {
+          setFeedback('valveMsg', res.error || `Erro HTTP ${r.status}`, true);
+          return;
+        }
+        setFeedback('valveMsg', open ? 'Valvula aberta manualmente.' : 'Valvula fechada manualmente.');
+        refreshStatus();
+      } catch (e) {
+        setFeedback('valveMsg', 'Erro de comunicacao ao acionar valvula.', true);
+      }
     }
 
     let wifiTestTimer = null;
 
-    function logWifi(msg, isHtml = false) {
+    function logWifi(msg) {
       const box = document.getElementById('wifiLog');
       const ts = new Date().toLocaleTimeString();
       const line = document.createElement('div');
-      if (isHtml) line.innerHTML = `[${ts}] ${msg}`;
-      else line.textContent = `[${ts}] ${msg}`;
+      line.textContent = `[${ts}] ${msg}`;
       box.appendChild(line);
       box.scrollTop = box.scrollHeight;
     }
@@ -457,7 +524,7 @@
       try {
         const r = await fetch('/api/wifi', {
           method:'POST',
-          headers:{'Content-Type':'application/json'},
+          headers: getApiHeaders(true),
           body:JSON.stringify({ssid, password})
         });
         const res = await r.json();
@@ -486,7 +553,7 @@
             wifiTestTimer = null;
             btn.disabled = false;
             btn.textContent = 'Testar & Conectar Wi-Fi';
-            logWifi(`CONECTADO com sucesso em "${net.ssid}"! IP: <a href="http://${net.ip}/">http://${net.ip}/</a> (RSSI ${net.rssi} dBm). SoftAP encerra em 15s.`, true);
+            logWifi(`CONECTADO com sucesso em "${net.ssid}"! IP: http://${net.ip}/ (RSSI ${net.rssi} dBm). SoftAP encerra em 15s.`);
             refreshStatus();
           } else if (!net.staConnecting && net.lastError) {
             clearInterval(wifiTestTimer);

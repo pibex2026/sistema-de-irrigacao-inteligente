@@ -23,7 +23,7 @@ static ActuatorManager g_actuatorMgr;
 static SensorsManager g_sensorsMgr;
 static ModelManager g_modelMgr;
 static NetworkManager g_networkMgr;
-static LocalWebServer g_webServer(g_configMgr, g_fileLogger, g_networkMgr, g_sensorsMgr);
+static LocalWebServer g_webServer(g_configMgr, g_fileLogger, g_networkMgr, g_sensorsMgr, g_actuatorMgr);
 static TelemetryClient g_telemetryClient(g_configMgr, g_networkMgr, g_webServer);
 
 static void controlTask(void *) {
