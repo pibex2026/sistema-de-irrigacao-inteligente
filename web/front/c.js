@@ -299,17 +299,26 @@ if (toggleValveBtn) {
   });
 }
 
-// Verifica sessão pré-existente
-window.addEventListener('DOMContentLoaded', () => {
+// Verifica sessão pré-existente validando o JWT no backend
+window.addEventListener('DOMContentLoaded', async () => {
   const token = localStorage.getItem('auth_token');
-  const userData = localStorage.getItem('user_data');
+  if (!token) return;
 
-  if (token && userData) {
-    try {
-      const user = JSON.parse(userData);
-      enterDashboard(user);
-    } catch {
-      localStorage.clear();
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user_data');
+      return;
     }
+    const data = await res.json();
+    if (data && data.user) {
+      localStorage.setItem('user_data', JSON.stringify(data.user));
+      enterDashboard(data.user);
+    }
+  } catch (err) {
+    console.error('Erro ao validar sessão:', err);
   }
 });
