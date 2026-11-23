@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config(); // Fallback se houver .env na pasta local
 const { validateEnv } = require('./configs/env');
 validateEnv();
-require('./configs/db'); 
+const db = require('./configs/db'); 
 
 const express = require('express');
 const cors = require('cors');
@@ -13,14 +13,23 @@ const telemetryRoutes = require('./routes/telemetryRoutes');
 const app = express();
 const port = process.env.PORT || 8080;
 
-app.use(cors());
+const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    : null;
+
+app.use(cors(corsOrigins ? { origin: corsOrigins } : undefined));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api', telemetryRoutes);
 
-app.get('/api', (req, res) => {
-    res.json({ status: "Backend operacional" });
+app.get('/api', async (req, res) => {
+    try {
+        await db.query('SELECT 1');
+        return res.json({ status: 'Backend operacional', db: 'ok' });
+    } catch (_err) {
+        return res.status(503).json({ status: 'Banco de dados indisponível', db: 'error' });
+    }
 });
 
 // Middleware global para tratamento de erros inesperados

@@ -50,6 +50,23 @@ const authController = {
             console.error('Erro ao buscar perfil:', error);
             return res.status(500).json({ error: 'Erro interno ao buscar perfil.' });
         }
+    },
+
+    async changePassword(req, res) {
+        try {
+            const { senhaAtual, novaSenha } = req.body || {};
+            if (!senhaAtual || !novaSenha) {
+                return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
+            }
+            const result = await authService.changePassword(req.user.id, senhaAtual, novaSenha);
+            return res.status(200).json(result);
+        } catch (error) {
+            if (error.statusCode) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error('Erro ao alterar senha:', error);
+            return res.status(500).json({ error: 'Erro interno ao alterar senha.' });
+        }
     }
 };
 
