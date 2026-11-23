@@ -252,6 +252,10 @@ std::vector<WifiScanEntry> NetworkManager::scanNetworks(size_t maxResults) {
   const esp_err_t scanErr = esp_wifi_scan_start(&scanCfg, true);
   if (scanErr != ESP_OK) {
     ESP_LOGW(TAG, "Falha no scan Wi-Fi: %s", esp_err_to_name(scanErr));
+    if (!wasConnected) {
+      esp_timer_stop(m_reconnectTimer);
+      esp_timer_start_once(m_reconnectTimer, static_cast<uint64_t>(m_backoffMs) * 1000ULL);
+    }
     return results;
   }
 
@@ -366,10 +370,11 @@ void NetworkManager::onWifiEvent(int32_t eventId, void *eventData) {
     m_status.lastDisconnectReason = reason;
     std::snprintf(m_status.lastError, sizeof(m_status.lastError), "%s (cod %u)",
                   wifiDisconnectReasonToStr(reason), static_cast<unsigned>(reason));
+    const bool apActive = m_status.apActive;
     xSemaphoreGive(m_mutex);
 
     m_retryCount++;
-    if (m_retryCount == 3 && !m_status.apActive) {
+    if (m_retryCount == 3 && !apActive) {
       ESP_LOGW(TAG, "3 falhas STA; ativando SoftAP temporario de respaldo.");
       startSoftApFallback();
     }
@@ -402,6 +407,7 @@ void NetworkManager::onIpEvent(int32_t eventId, void *eventData) {
   m_status.rssi = rssi;
   std::strncpy(m_status.ssid, ssid, sizeof(m_status.ssid) - 1);
   std::snprintf(m_status.ip, sizeof(m_status.ip), IPSTR, IP2STR(&event->ip_info.ip));
+  const bool apActive = m_status.apActive;
   xSemaphoreGive(m_mutex);
 
   m_retryCount = 0;
@@ -420,7 +426,7 @@ void NetworkManager::onIpEvent(int32_t eventId, void *eventData) {
     }
   }
 
-  if (m_status.apActive) {
+  if (apActive) {
     // Mantem SoftAP por 15s para que a pagina em 192.168.4.1 exiba o IP obtido antes de encerrar o AP
     esp_timer_stop(m_apTimeoutTimer);
     esp_timer_start_once(m_apTimeoutTimer, 15ULL * 1000000ULL);
