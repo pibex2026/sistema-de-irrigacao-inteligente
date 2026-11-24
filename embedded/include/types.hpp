@@ -18,6 +18,11 @@ enum class IrrigationDecision : uint8_t {
   THERMAL_STRESS_WET_SOIL = 2
 };
 
+enum class ActuatorCommandType : uint8_t {
+  APPLY_DECISION = 0,
+  EMERGENCY_STOP = 1
+};
+
 struct SystemConfig {
   uint32_t schemaVersion = 2;
   uint8_t soilType = Config::Defaults::SOIL_TYPE;
@@ -76,6 +81,14 @@ struct InferenceLogEntry {
   bool valveOpen = false;
 };
 
+struct ActuatorCommand {
+  ActuatorCommandType type = ActuatorCommandType::APPLY_DECISION;
+  InferenceResult inference{};
+  SensorData sensors{};
+  AgronomicContext context{};
+  bool shouldLogInference = false;
+};
+
 struct ActuatorStatus {
   bool valveOpen = false;
   bool inCooldown = false;
@@ -119,6 +132,12 @@ struct PerformanceStats {
   uint32_t avgLatencyUs = 0;
   uint32_t tfliteArenaUsedBytes = 0;
   uint32_t controlTaskStackFreeBytes = 0;
+  uint32_t actuatorTaskStackFreeBytes = 0;
+  uint32_t sensorAiTaskStackFreeBytes = 0;
+  uint32_t loggerTaskStackFreeBytes = 0;
+  uint32_t telemetryTaskStackFreeBytes = 0;
+  uint32_t logQueuePending = 0;
+  uint32_t logDroppedCount = 0;
 };
 
 struct StorageStats {

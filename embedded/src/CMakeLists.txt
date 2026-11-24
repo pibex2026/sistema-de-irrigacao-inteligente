@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "main.cpp"
         "core/ConfigManager.cpp"
+        "core/SystemStateStore.cpp"
         "core/TimeUtils.cpp"
         "drivers/Dht22Driver.cpp"
         "drivers/SensorsManager.cpp"

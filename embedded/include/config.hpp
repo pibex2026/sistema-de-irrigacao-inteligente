@@ -64,4 +64,28 @@ constexpr size_t MAX_READINGS_LOG_BYTES = 180 * 1024;
 constexpr size_t MAX_INFERENCE_LOG_BYTES = 180 * 1024;
 } // namespace Storage
 
+namespace Tasks {
+constexpr unsigned int ACTUATOR_SAFETY_PRIO = 7;
+constexpr uint32_t ACTUATOR_SAFETY_STACK = 4096;
+constexpr uint32_t ACTUATOR_TICK_MS = 100;
+constexpr size_t ACTUATOR_CMD_QUEUE_LEN = 8;
+
+constexpr unsigned int SENSOR_AI_PRIO = 6;
+constexpr uint32_t SENSOR_AI_STACK = 8192;
+constexpr uint32_t SENSOR_WDT_SLICE_MS = 250;
+
+constexpr unsigned int HTTPD_PRIO = 4;
+constexpr uint32_t HTTPD_STACK = 6144;
+
+constexpr unsigned int TELEMETRY_PRIO = 3;
+constexpr uint32_t TELEMETRY_STACK = 6144;
+
+constexpr unsigned int LOGGER_PRIO = 2;
+constexpr uint32_t LOGGER_STACK = 4096;
+constexpr size_t LOGGER_QUEUE_LEN = 24;
+
+constexpr unsigned int DNS_CAPTIVE_PRIO = 2;
+constexpr uint32_t DNS_CAPTIVE_STACK = 3072;
+} // namespace Tasks
+
 } // namespace Config
