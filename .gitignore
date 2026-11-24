@@ -217,3 +217,7 @@ ai-model/datasets/
 embedded/managed_components/
 
 .vscode
+
+# LibreOffice / Office lock files
+.~lock.*#
+
