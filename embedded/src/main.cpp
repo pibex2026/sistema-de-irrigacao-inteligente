@@ -5,6 +5,7 @@
 #include "ModelManager.hpp"
 #include "NetworkManager.hpp"
 #include "SensorsManager.hpp"
+#include "SystemStateStore.hpp"
 #include "TelemetryClient.hpp"
 #include "TimeUtils.hpp"
 #include "config.hpp"
@@ -12,6 +13,7 @@
 #include "esp_system.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "types.hpp"
 
@@ -23,22 +25,75 @@ static ActuatorManager g_actuatorMgr;
 static SensorsManager g_sensorsMgr;
 static ModelManager g_modelMgr;
 static NetworkManager g_networkMgr;
-static LocalWebServer g_webServer(g_configMgr, g_fileLogger, g_networkMgr, g_sensorsMgr, g_actuatorMgr);
-static TelemetryClient g_telemetryClient(g_configMgr, g_networkMgr, g_webServer);
+static SystemStateStore g_stateStore;
+static LocalWebServer g_webServer(g_configMgr, g_fileLogger, g_networkMgr, g_sensorsMgr,
+                                  g_actuatorMgr, g_stateStore);
+static TelemetryClient g_telemetryClient(g_configMgr, g_networkMgr, g_stateStore);
 
-static void controlTask(void *) {
+static QueueHandle_t g_actuatorCmdQueue = nullptr;
+
+static void actuatorSafetyTask(void *) {
+  esp_task_wdt_add(nullptr);
+
+  bool prevValveOpen = false;
+  uint32_t valveActivations = 0;
+
+  while (true) {
+    esp_task_wdt_reset();
+
+    const SystemConfig cfg = g_configMgr.get();
+    ActuatorCommand cmd{};
+    const bool hasCmd = (g_actuatorCmdQueue != nullptr) &&
+                        (xQueueReceive(g_actuatorCmdQueue, &cmd,
+                                       pdMS_TO_TICKS(Config::Tasks::ACTUATOR_TICK_MS)) == pdTRUE);
+
+    if (hasCmd) {
+      if (cmd.type == ActuatorCommandType::EMERGENCY_STOP) {
+        g_actuatorMgr.emergencyStop();
+      } else {
+        g_actuatorMgr.applyDecision(cmd.inference, cfg);
+        if (cmd.shouldLogInference) {
+          const ActuatorStatus actSt = g_actuatorMgr.getStatus();
+          InferenceLogEntry entry{};
+          entry.sensors = cmd.sensors;
+          entry.context = cmd.context;
+          entry.inference = cmd.inference;
+          entry.valveOpen = actSt.valveOpen;
+          g_fileLogger.enqueueInferenceData(entry);
+        }
+      }
+    }
+
+    g_actuatorMgr.update(cfg);
+
+    const ActuatorStatus curAct = g_actuatorMgr.getStatus();
+    if (curAct.valveOpen != prevValveOpen) {
+      if (curAct.valveOpen) {
+        valveActivations++;
+      }
+      prevValveOpen = curAct.valveOpen;
+      g_telemetryClient.notifyValveStateChanged();
+    }
+
+    const uint32_t stackFree =
+        static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+    g_stateStore.updateFromActuator(curAct, valveActivations, stackFree);
+  }
+}
+
+static void sensorAiTask(void *) {
   esp_task_wdt_add(nullptr);
 
   SystemState currentState = SystemState::INIT;
   SensorData lastSensorData{};
   InferenceResult lastInference{};
+  AgronomicContext lastContext{};
 
   int64_t lastReadMs = -1000000;
   int64_t lastReadingsLogMs = -1000000;
   int64_t lastInferenceLogMs = -1000000;
   uint8_t consecutiveSensorErrors = 0;
   bool modelReady = false;
-  bool prevValveOpen = false;
   uint64_t latencyAccumUs = 0;
   PerformanceStats perf{};
 
@@ -47,7 +102,6 @@ static void controlTask(void *) {
 
     const SystemConfig cfg = g_configMgr.get();
     const int64_t nowMs = TimeUtils::getMillis();
-    g_actuatorMgr.update(cfg);
 
     switch (currentState) {
     case SystemState::INIT: {
@@ -93,7 +147,7 @@ static void controlTask(void *) {
         consecutiveSensorErrors = 0;
         if ((nowMs - lastReadingsLogMs) >= static_cast<int64_t>(cfg.logIntervalMs)) {
           lastReadingsLogMs = nowMs;
-          g_fileLogger.logSensorData(lastSensorData);
+          g_fileLogger.enqueueSensorData(lastSensorData);
         }
         currentState = SystemState::RUN_INFERENCE;
       }
@@ -101,14 +155,14 @@ static void controlTask(void *) {
     }
 
     case SystemState::RUN_INFERENCE: {
-      AgronomicContext ctx{};
-      ctx.soilType = cfg.soilType;
-      ctx.cropId = cfg.cropId;
-      ctx.seedlingStage = cfg.seedlingStage;
-      ctx.confidenceThreshold = cfg.confidenceThreshold;
-      ctx.thermalStressThreshold = cfg.thermalStressThreshold;
+      lastContext = AgronomicContext{};
+      lastContext.soilType = cfg.soilType;
+      lastContext.cropId = cfg.cropId;
+      lastContext.seedlingStage = cfg.seedlingStage;
+      lastContext.confidenceThreshold = cfg.confidenceThreshold;
+      lastContext.thermalStressThreshold = cfg.thermalStressThreshold;
 
-      lastInference = g_modelMgr.predict(lastSensorData, ctx);
+      lastInference = g_modelMgr.predict(lastSensorData, lastContext);
       if (!lastInference.valid) {
         ESP_LOGE(TAG, "Inferencia invalida -> ERROR.");
         currentState = SystemState::ERROR;
@@ -141,20 +195,22 @@ static void controlTask(void *) {
     }
 
     case SystemState::EXECUTE_ACTION: {
-      g_actuatorMgr.applyDecision(lastInference, cfg);
-      const ActuatorStatus actSt = g_actuatorMgr.getStatus();
-
-      if ((nowMs - lastInferenceLogMs) >= static_cast<int64_t>(cfg.logIntervalMs) ||
-          lastInference.thermalStressAlert) {
+      ActuatorCommand cmd{};
+      cmd.type = ActuatorCommandType::APPLY_DECISION;
+      cmd.inference = lastInference;
+      cmd.sensors = lastSensorData;
+      cmd.context = lastContext;
+      cmd.shouldLogInference =
+          ((nowMs - lastInferenceLogMs) >= static_cast<int64_t>(cfg.logIntervalMs)) ||
+          lastInference.thermalStressAlert;
+      if (cmd.shouldLogInference) {
         lastInferenceLogMs = nowMs;
-        InferenceLogEntry entry{};
-        entry.sensors = lastSensorData;
-        entry.context.soilType = cfg.soilType;
-        entry.context.cropId = cfg.cropId;
-        entry.context.seedlingStage = cfg.seedlingStage;
-        entry.inference = lastInference;
-        entry.valveOpen = actSt.valveOpen;
-        g_fileLogger.logInferenceData(entry);
+      }
+
+      if (g_actuatorCmdQueue != nullptr) {
+        if (xQueueSend(g_actuatorCmdQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+          ESP_LOGW(TAG, "Fila de comandos do atuador cheia; comando descartado.");
+        }
       }
 
       currentState = SystemState::READ_SENSORS;
@@ -162,7 +218,14 @@ static void controlTask(void *) {
     }
 
     case SystemState::ERROR: {
-      g_actuatorMgr.emergencyStop();
+      if (g_actuatorCmdQueue != nullptr) {
+        ActuatorCommand stopCmd{};
+        stopCmd.type = ActuatorCommandType::EMERGENCY_STOP;
+        xQueueSend(g_actuatorCmdQueue, &stopCmd, 0);
+      } else {
+        g_actuatorMgr.emergencyStop();
+      }
+
       if (!modelReady) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         break;
@@ -175,35 +238,32 @@ static void controlTask(void *) {
     }
     }
 
-    const ActuatorStatus curAct = g_actuatorMgr.getStatus();
-    if (curAct.valveOpen && !prevValveOpen) {
-      perf.valveActivations++;
-    }
-    prevValveOpen = curAct.valveOpen;
-    perf.controlTaskStackFreeBytes = static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+    perf.sensorAiTaskStackFreeBytes =
+        static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+    perf.controlTaskStackFreeBytes = perf.sensorAiTaskStackFreeBytes;
 
-    SystemSnapshot snap{};
-    snap.state = currentState;
-    snap.lastSensors = lastSensorData;
-    snap.lastInference = lastInference;
-    snap.actuator = curAct;
-    snap.performance = perf;
-    snap.freeHeapBytes = esp_get_free_heap_size();
-    snap.uptimeSec = TimeUtils::getUptimeSec();
-    g_webServer.updateSnapshot(snap);
+    g_stateStore.updateFromSensorAi(currentState, lastSensorData, lastInference, perf);
+    g_stateStore.updateLoggerMetrics(g_fileLogger.getQueuePending(),
+                                     g_fileLogger.getDroppedCount(),
+                                     g_fileLogger.getTaskStackFreeBytes());
 
-    vTaskDelay(pdMS_TO_TICKS(250));
+    vTaskDelay(pdMS_TO_TICKS(Config::Tasks::SENSOR_WDT_SLICE_MS));
   }
 }
 
 extern "C" void app_main(void) {
   ESP_LOGI(TAG, "============================================================");
   ESP_LOGI(TAG, " Sistema de Irrigacao Inteligente - PIBEX 2026 (IFPE)");
-  ESP_LOGI(TAG, " Firmware ESP-IDF v5.5 | PhysMLP-27 Full INT8");
+  ESP_LOGI(TAG, " Firmware ESP-IDF v5.5 | PhysMLP-27 Full INT8 (SMP)");
   ESP_LOGI(TAG, "============================================================");
 
   ESP_ERROR_CHECK(g_configMgr.init());
   ESP_ERROR_CHECK(g_actuatorMgr.init()); // Garante valvula fechada o quanto antes
+
+  g_actuatorCmdQueue = xQueueCreate(Config::Tasks::ACTUATOR_CMD_QUEUE_LEN, sizeof(ActuatorCommand));
+  if (g_actuatorCmdQueue == nullptr) {
+    ESP_LOGE(TAG, "Falha ao criar fila de comandos do atuador.");
+  }
 
   if (g_fileLogger.init() != ESP_OK) {
     ESP_LOGW(TAG, "LittleFS indisponivel; seguindo sem persistencia CSV.");
@@ -225,13 +285,21 @@ extern "C" void app_main(void) {
     ESP_LOGW(TAG, "Falha ao iniciar cliente de telemetria.");
   }
 
-  // Task de controle, IA e atuacao fixada no Core 1 (APP_CPU)
   xTaskCreatePinnedToCore(
-      controlTask,
-      "control_task",
-      8192,
+      actuatorSafetyTask,
+      "actuator_safety",
+      Config::Tasks::ACTUATOR_SAFETY_STACK,
       nullptr,
-      5,
+      Config::Tasks::ACTUATOR_SAFETY_PRIO,
       nullptr,
-      1);
+      tskNO_AFFINITY);
+
+  xTaskCreatePinnedToCore(
+      sensorAiTask,
+      "sensor_ai_task",
+      Config::Tasks::SENSOR_AI_STACK,
+      nullptr,
+      Config::Tasks::SENSOR_AI_PRIO,
+      nullptr,
+      tskNO_AFFINITY);
 }
