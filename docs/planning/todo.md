@@ -29,6 +29,7 @@
 
 - [x] Criar classe `NetworkManager` para encapsular a lógica de rede (ESP-IDF Wi-Fi + SoftAP fallback)
 - [x] Integrar portal cativo DNS/DHCP (RFC 8910) para provisionamento dinâmico de rede sem credenciais hardcoded
+- [ ] Revisar e corrigir o funcionamento do DNS Captive Portal (`NetworkManager` / `dns_captive`)
 - [x] Configurar `LocalWebServer` (`esp_http_server`) para criar uma interface de monitoramento local
 - [x] Configurar `espressif/mdns` para acesso amigável na rede local (`irrigacao.local`).
 - [x] Sincronizar o relógio interno do ESP32 com o servidor NTP (`a.st1.ntp.br` / `pool.ntp.org`) apenas uma vez após a conexão Wi-Fi ser estabelecida

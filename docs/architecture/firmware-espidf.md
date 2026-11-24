@@ -52,12 +52,18 @@ embedded/
 
 ---
 
-## 3. Concorrência FreeRTOS e Máquina de Estados (FSM)
+## 3. Concorrência FreeRTOS SMP e Máquina de Estados (FSM)
 
-| Núcleo | Tarefa / Módulo | Responsabilidade |
-| :--- | :--- | :--- |
-| **Core 1 (`APP_CPU`)** | `controlTask` (stack `8192 B`, prio `5`, tick `250 ms`) | Alimenta `esp_task_wdt`, executa `ActuatorManager::update()` a cada `250 ms` (garantindo corte exato por *timeout*) e conduz a FSM. |
-| **Core 0 (`PRO_CPU`)** | `NetworkManager` + `LocalWebServer` | Gerencia eventos Wi-Fi/IP, SNTP e requisições HTTP sem jamais bloquear a leitura de sensores ou o fechamento da válvula. |
+Todas as tasks de aplicação utilizam **`tskNO_AFFINITY`** (escalonamento **SMP dinâmico** entre Core 0 e Core 1 conforme prioridade e disponibilidade de núcleo):
+
+| Task / Módulo | Afinidade | Prioridade | Stack | Responsabilidade |
+| :--- | :---: | :---: | :---: | :--- |
+| **`actuator_safety`** | `tskNO_AFFINITY` | **`7`** | `4096 B` | Supervisão hidráulica a cada `100 ms` (`ActuatorManager::update()`), aplicação de comandos via `g_actuatorCmdQueue`, parada de emergência, notificação de mudança de válvula e Watchdog (`30 s`). |
+| **`sensor_ai_task`** | `tskNO_AFFINITY` | **`6`** | `8192 B` | Conduz a FSM (`INIT -> READ_SENSORS -> RUN_INFERENCE -> EXECUTE_ACTION`), envia comandos para `g_actuatorCmdQueue`, enfileira logs no `FileLogger`, atualiza `SystemStateStore` e alimenta o Watchdog (`30 s`) com fatia de `250 ms`. |
+| **`httpd` (`LocalWebServer`)** | `tskNO_AFFINITY` | **`4`** | `6144 B` | Servidor HTTP local, endpoints JSON (`/api/*`), streaming CSV e interface gzip usando `SystemStateStore`. |
+| **`telemetry_task`** | `tskNO_AFFINITY` | **`3`** | `6144 B` | Acorda via `Task Notification` em mudanças imediatas de válvula (ou timeout de `1 s`) e envia POST JSON para o backend. |
+| **`logger_task` (`FileLogger`)** | `tskNO_AFFINITY` | **`2`** | `4096 B` | Consome fila assíncrona de `24` slots em RAM e grava `/littlefs/*.csv` em segundo plano; descarta o item mais antigo se cheia sem bloquear sensores/IA. |
+| **`dns_captive` (`NetworkManager`)** | `tskNO_AFFINITY` | **`2`** | `3072 B` | Servidor UDP porta 53 enquanto SoftAP estiver ativo (revisão funcional pendente). |
 
 ### Fluxo da FSM (`SystemState`)
 1. **`INIT`:** Inicializa `ModelManager` (`esp-tflite-micro` INT8) e executa `runGoldenSelfTest()`. Em caso de falha do modelo $\rightarrow$ `ERROR`.
