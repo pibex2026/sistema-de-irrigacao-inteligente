@@ -9,8 +9,8 @@
 static const char *TAG = "TelemetryClient";
 
 TelemetryClient::TelemetryClient(ConfigManager &cfgMgr, NetworkManager &netMgr,
-                                 LocalWebServer &webServer)
-    : m_cfgMgr(cfgMgr), m_netMgr(netMgr), m_webServer(webServer) {}
+                                 SystemStateStore &stateStore)
+    : m_cfgMgr(cfgMgr), m_netMgr(netMgr), m_stateStore(stateStore) {}
 
 TelemetryClient::~TelemetryClient() {
   stop();
@@ -23,21 +23,27 @@ esp_err_t TelemetryClient::start() {
   const BaseType_t rc = xTaskCreatePinnedToCore(
       telemetryTask,
       "telemetry_task",
-      6144,
+      Config::Tasks::TELEMETRY_STACK,
       this,
-      3,
+      Config::Tasks::TELEMETRY_PRIO,
       &m_taskHandle,
-      0 // Core 0 (PRO_CPU) para nao bloquear controlTask no Core 1
+      tskNO_AFFINITY
   );
   if (rc != pdPASS) {
     m_running = false;
     m_taskHandle = nullptr;
-    ESP_LOGE(TAG, "Falha ao criar telemetry_task no Core 0.");
+    ESP_LOGE(TAG, "Falha ao criar telemetry_task.");
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "TelemetryClient iniciado no Core 0.");
+  ESP_LOGI(TAG, "TelemetryClient iniciado (SMP prio %u).", Config::Tasks::TELEMETRY_PRIO);
   return ESP_OK;
+}
+
+void TelemetryClient::notifyValveStateChanged() {
+  if (m_taskHandle != nullptr) {
+    xTaskNotifyGive(m_taskHandle);
+  }
 }
 
 void TelemetryClient::stop() {
@@ -115,7 +121,7 @@ void TelemetryClient::telemetryTask(void *arg) {
   while (self->m_running) {
     const SystemConfig cfg = self->m_cfgMgr.get();
     const NetworkStatus net = self->m_netMgr.getStatus();
-    const SystemSnapshot snap = self->m_webServer.getSnapshot();
+    const SystemSnapshot snap = self->m_stateStore.getSnapshot();
     const int64_t nowMs = TimeUtils::getMillis();
 
     const bool valveChanged = (snap.actuator.valveOpen != prevValveOpen);
@@ -140,7 +146,9 @@ void TelemetryClient::telemetryTask(void *arg) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    self->m_stateStore.updateTelemetryMetrics(
+        static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
   }
 
   vTaskDelete(nullptr);

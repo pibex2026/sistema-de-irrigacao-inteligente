@@ -1,19 +1,20 @@
 #pragma once
 
 #include "ConfigManager.hpp"
-#include "LocalWebServer.hpp"
 #include "NetworkManager.hpp"
+#include "SystemStateStore.hpp"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 class TelemetryClient {
 public:
-  TelemetryClient(ConfigManager &cfgMgr, NetworkManager &netMgr, LocalWebServer &webServer);
+  TelemetryClient(ConfigManager &cfgMgr, NetworkManager &netMgr, SystemStateStore &stateStore);
   ~TelemetryClient();
 
   esp_err_t start();
   void stop();
+  void notifyValveStateChanged();
 
 private:
   static void telemetryTask(void *arg);
@@ -23,7 +24,7 @@ private:
 
   ConfigManager &m_cfgMgr;
   NetworkManager &m_netMgr;
-  LocalWebServer &m_webServer;
+  SystemStateStore &m_stateStore;
 
   TaskHandle_t m_taskHandle = nullptr;
   volatile bool m_running = false;

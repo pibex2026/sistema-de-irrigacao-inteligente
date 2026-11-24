@@ -5,21 +5,20 @@
 #include "FileLogger.hpp"
 #include "NetworkManager.hpp"
 #include "SensorsManager.hpp"
+#include "SystemStateStore.hpp"
 #include "esp_err.h"
 #include "esp_http_server.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include "types.hpp"
 
 class LocalWebServer {
 public:
   LocalWebServer(ConfigManager &cfgMgr, FileLogger &logger, NetworkManager &netMgr,
-                 SensorsManager &sensorsMgr, ActuatorManager &actuatorMgr);
+                 SensorsManager &sensorsMgr, ActuatorManager &actuatorMgr,
+                 SystemStateStore &stateStore);
   ~LocalWebServer();
 
   esp_err_t start();
   void stop();
-  void updateSnapshot(const SystemSnapshot &snap);
   SystemSnapshot getSnapshot() const;
 
 private:
@@ -52,8 +51,7 @@ private:
   NetworkManager &m_netMgr;
   SensorsManager &m_sensorsMgr;
   ActuatorManager &m_actuatorMgr;
+  SystemStateStore &m_stateStore;
 
   httpd_handle_t m_server = nullptr;
-  SystemSnapshot m_snapshot{};
-  mutable SemaphoreHandle_t m_snapMutex = nullptr;
 };

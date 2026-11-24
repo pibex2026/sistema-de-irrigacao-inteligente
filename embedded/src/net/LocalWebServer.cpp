@@ -19,43 +19,27 @@ static const char *TAG = "LocalWebServer";
 
 LocalWebServer::LocalWebServer(ConfigManager &cfgMgr, FileLogger &logger,
                                NetworkManager &netMgr, SensorsManager &sensorsMgr,
-                               ActuatorManager &actuatorMgr)
+                               ActuatorManager &actuatorMgr, SystemStateStore &stateStore)
     : m_cfgMgr(cfgMgr), m_logger(logger), m_netMgr(netMgr), m_sensorsMgr(sensorsMgr),
-      m_actuatorMgr(actuatorMgr) {
-  m_snapMutex = xSemaphoreCreateMutex();
-}
+      m_actuatorMgr(actuatorMgr), m_stateStore(stateStore) {}
 
 LocalWebServer::~LocalWebServer() {
   stop();
-  if (m_snapMutex != nullptr) {
-    vSemaphoreDelete(m_snapMutex);
-    m_snapMutex = nullptr;
-  }
-}
-
-void LocalWebServer::updateSnapshot(const SystemSnapshot &snap) {
-  if (m_snapMutex == nullptr) return;
-  xSemaphoreTake(m_snapMutex, portMAX_DELAY);
-  m_snapshot = snap;
-  xSemaphoreGive(m_snapMutex);
 }
 
 SystemSnapshot LocalWebServer::getSnapshot() const {
-  SystemSnapshot copy{};
-  if (m_snapMutex == nullptr) return copy;
-  xSemaphoreTake(m_snapMutex, portMAX_DELAY);
-  copy = m_snapshot;
-  xSemaphoreGive(m_snapMutex);
-  return copy;
+  return m_stateStore.getSnapshot();
 }
 
 esp_err_t LocalWebServer::start() {
   if (m_server != nullptr) return ESP_OK;
 
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.core_id = tskNO_AFFINITY;
+  config.task_priority = Config::Tasks::HTTPD_PRIO;
   config.max_uri_handlers = 26;
   config.max_open_sockets = 11;
-  config.stack_size = 6144;
+  config.stack_size = Config::Tasks::HTTPD_STACK;
   config.lru_purge_enable = true;
 
   esp_err_t err = httpd_start(&m_server, &config);
@@ -309,6 +293,12 @@ esp_err_t LocalWebServer::handleGetPerformance(httpd_req_t *req) {
   cJSON_AddNumberToObject(p, "avgLatencyUs", snap.performance.avgLatencyUs);
   cJSON_AddNumberToObject(p, "tfliteArenaUsedBytes", snap.performance.tfliteArenaUsedBytes);
   cJSON_AddNumberToObject(p, "controlTaskStackFreeBytes", snap.performance.controlTaskStackFreeBytes);
+  cJSON_AddNumberToObject(p, "actuatorTaskStackFreeBytes", snap.performance.actuatorTaskStackFreeBytes);
+  cJSON_AddNumberToObject(p, "sensorAiTaskStackFreeBytes", snap.performance.sensorAiTaskStackFreeBytes);
+  cJSON_AddNumberToObject(p, "loggerTaskStackFreeBytes", snap.performance.loggerTaskStackFreeBytes);
+  cJSON_AddNumberToObject(p, "telemetryTaskStackFreeBytes", snap.performance.telemetryTaskStackFreeBytes);
+  cJSON_AddNumberToObject(p, "logQueuePending", snap.performance.logQueuePending);
+  cJSON_AddNumberToObject(p, "logDroppedCount", snap.performance.logDroppedCount);
 
   cJSON *history = cJSON_AddArrayToObject(root, "recentInferences");
   for (const auto &e : recentInf) {

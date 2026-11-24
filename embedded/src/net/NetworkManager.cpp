@@ -467,7 +467,14 @@ void NetworkManager::configureDhcpCaptivePortal() {
 void NetworkManager::startDnsCaptiveServer() {
   if (m_dnsRunning) return;
   m_dnsRunning = true;
-  xTaskCreatePinnedToCore(dnsCaptiveTask, "dns_captive", 3072, this, 3, &m_dnsTaskHandle, 0);
+  xTaskCreatePinnedToCore(
+      dnsCaptiveTask,
+      "dns_captive",
+      Config::Tasks::DNS_CAPTIVE_STACK,
+      this,
+      Config::Tasks::DNS_CAPTIVE_PRIO,
+      &m_dnsTaskHandle,
+      tskNO_AFFINITY);
 }
 
 void NetworkManager::stopDnsCaptiveServer() {
