@@ -18,6 +18,17 @@ FileLogger::FileLogger() {
 }
 
 FileLogger::~FileLogger() {
+  m_running = false;
+  if (m_queue != nullptr && m_taskHandle != nullptr) {
+    LogQueueItem stopItem{};
+    stopItem.kind = LogQueueItem::Kind::STOP;
+    xQueueSend(m_queue, &stopItem, pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+  if (m_queue != nullptr) {
+    vQueueDelete(m_queue);
+    m_queue = nullptr;
+  }
   if (m_mutex != nullptr) {
     vSemaphoreDelete(m_mutex);
     m_mutex = nullptr;
@@ -45,6 +56,26 @@ esp_err_t FileLogger::init() {
   m_mounted = true;
   ensureCsvHeader(Config::Storage::READINGS_CSV_PATH, READINGS_HEADER);
   ensureCsvHeader(Config::Storage::INFERENCE_CSV_PATH, INFERENCE_HEADER);
+
+  if (m_queue == nullptr) {
+    m_queue = xQueueCreate(Config::Tasks::LOGGER_QUEUE_LEN, sizeof(LogQueueItem));
+  }
+  if (m_queue != nullptr && m_taskHandle == nullptr) {
+    m_running = true;
+    const BaseType_t rc = xTaskCreatePinnedToCore(
+        loggerTask,
+        "logger_task",
+        Config::Tasks::LOGGER_STACK,
+        this,
+        Config::Tasks::LOGGER_PRIO,
+        &m_taskHandle,
+        tskNO_AFFINITY);
+    if (rc != pdPASS) {
+      m_running = false;
+      m_taskHandle = nullptr;
+      ESP_LOGW(TAG, "Falha ao criar logger_task assincrona.");
+    }
+  }
   return ESP_OK;
 }
 
@@ -77,7 +108,75 @@ void FileLogger::rotateIfNeeded(const char *path, const char *prevPath,
   ESP_LOGW(TAG, "Rotacao de log executada: %s -> %s", path, prevPath);
 }
 
+uint32_t FileLogger::getQueuePending() const {
+  if (m_queue == nullptr) return 0;
+  return static_cast<uint32_t>(uxQueueMessagesWaiting(m_queue));
+}
+
+bool FileLogger::enqueueItem(const LogQueueItem &item) {
+  if (!m_mounted || m_queue == nullptr) return false;
+  if (xQueueSend(m_queue, &item, 0) == pdTRUE) {
+    return true;
+  }
+
+  // Fila cheia: descarta o registro mais antigo para nao bloquear sensores/IA
+  LogQueueItem discarded{};
+  if (xQueueReceive(m_queue, &discarded, 0) == pdTRUE) {
+    m_droppedCount.fetch_add(1);
+  }
+  if (xQueueSend(m_queue, &item, 0) == pdTRUE) {
+    return true;
+  }
+  m_droppedCount.fetch_add(1);
+  return false;
+}
+
+bool FileLogger::enqueueSensorData(const SensorData &data) {
+  LogQueueItem item{};
+  item.kind = LogQueueItem::Kind::SENSOR;
+  item.sensor = data;
+  return enqueueItem(item);
+}
+
+bool FileLogger::enqueueInferenceData(const InferenceLogEntry &entry) {
+  LogQueueItem item{};
+  item.kind = LogQueueItem::Kind::INFERENCE;
+  item.inference = entry;
+  return enqueueItem(item);
+}
+
 bool FileLogger::logSensorData(const SensorData &data) {
+  return enqueueSensorData(data);
+}
+
+bool FileLogger::logInferenceData(const InferenceLogEntry &entry) {
+  return enqueueInferenceData(entry);
+}
+
+void FileLogger::loggerTask(void *arg) {
+  auto *self = static_cast<FileLogger *>(arg);
+  LogQueueItem item{};
+
+  while (self->m_running.load()) {
+    if (xQueueReceive(self->m_queue, &item, pdMS_TO_TICKS(1000)) == pdTRUE) {
+      if (item.kind == LogQueueItem::Kind::STOP) {
+        break;
+      }
+      if (item.kind == LogQueueItem::Kind::SENSOR) {
+        self->writeSensorDataSync(item.sensor);
+      } else if (item.kind == LogQueueItem::Kind::INFERENCE) {
+        self->writeInferenceDataSync(item.inference);
+      }
+    }
+    self->m_stackFreeBytes.store(
+        static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
+  }
+
+  self->m_taskHandle = nullptr;
+  vTaskDelete(nullptr);
+}
+
+bool FileLogger::writeSensorDataSync(const SensorData &data) {
   if (!m_mounted || m_mutex == nullptr) return false;
   xSemaphoreTake(m_mutex, portMAX_DELAY);
 
@@ -102,7 +201,7 @@ bool FileLogger::logSensorData(const SensorData &data) {
   return ok;
 }
 
-bool FileLogger::logInferenceData(const InferenceLogEntry &entry) {
+bool FileLogger::writeInferenceDataSync(const InferenceLogEntry &entry) {
   if (!m_mounted || m_mutex == nullptr) return false;
   xSemaphoreTake(m_mutex, portMAX_DELAY);
 
